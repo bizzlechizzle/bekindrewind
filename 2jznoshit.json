@@ -1,0 +1,67 @@
+{
+  "were_family": {
+    "logs": false
+  },
+  "danger2manifold": {
+    "logs": false
+  },
+  "import_tuner": {
+    "logs": false,
+    "json": false
+  },
+  "miata_info": {
+    "logs": false,
+    "json": false
+  },
+  "fastandthefurious": {
+    "logs": false
+  },
+  "2fast2furious": {
+    "logs": true,
+    "json": false
+  },
+  "honda_S2000": {
+    "logs": false,
+    "json": false
+  },
+  "hector": {
+    "logs": false,
+    "json": false
+  },
+  "any_flavor": {
+    "logs": false,
+    "json": false
+  },
+  "69_charger": {
+    "logs": false,
+    "json": false
+  },
+  "140mph": {
+    "logs": false,
+    "json": false
+  },
+  "api_keys": {
+    }
+  },
+  "user_input": {
+    "default": {
+      "it_src": "amazon",
+      "it_src_link": "amazon.com",
+      "it_src_short": "amzn",
+      "it_torrent": "season",
+      "timeout": "5 seconds"
+    }
+  },
+  "library": {
+    "amazon": {
+      "it_src": "amazon",
+      "it_src_link": "amazon.com",
+      "it_src_short": "amzn"
+    },
+    "hbo": {
+      "it_src": "hbo",
+      "it_src_link": "max.com",
+      "it_src_short": "hbo"
+    }
+  }
+}
