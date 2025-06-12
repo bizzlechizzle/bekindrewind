@@ -56,7 +56,7 @@
     "logs": false
   },
   "oil_change": {
-    "logs": false
+    "logs": true
   },
   "release_group": {
     "full": "[pleaserewind]",

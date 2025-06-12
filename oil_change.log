@@ -1,0 +1,63 @@
+2025-06-12 09:18:56,967 - ThreadPoolExecutor-0_3 - INFO - Processed Cheap Old Houses S01E03 -> /volumes/barbossa/upload/tor/Cheap Old Houses - Season 01
+2025-06-12 09:18:56,968 - ThreadPoolExecutor-0_0 - INFO - Processed Cheap Old Houses S01E05 -> /volumes/barbossa/upload/tor/Cheap Old Houses - Season 01
+2025-06-12 09:18:56,969 - ThreadPoolExecutor-0_1 - INFO - Processed Cheap Old Houses S01E08 -> /volumes/barbossa/upload/tor/Cheap Old Houses - Season 01
+2025-06-12 09:18:56,969 - ThreadPoolExecutor-0_2 - INFO - Processed Cheap Old Houses S01E04 -> /volumes/barbossa/upload/tor/Cheap Old Houses - Season 01
+2025-06-12 09:18:56,969 - ThreadPoolExecutor-0_3 - INFO - Processed Cheap Old Houses S01E07 -> /volumes/barbossa/upload/tor/Cheap Old Houses - Season 01
+2025-06-12 09:18:56,972 - ThreadPoolExecutor-0_3 - INFO - Processed Cheap Old Houses S01E10 -> /volumes/barbossa/upload/tor/Cheap Old Houses - Season 01
+2025-06-12 09:18:56,972 - ThreadPoolExecutor-0_0 - INFO - Processed Cheap Old Houses S01E02 -> /volumes/barbossa/upload/tor/Cheap Old Houses - Season 01
+2025-06-12 09:18:56,973 - ThreadPoolExecutor-0_2 - INFO - Processed Cheap Old Houses S01E01 -> /volumes/barbossa/upload/tor/Cheap Old Houses - Season 01
+2025-06-12 09:18:56,974 - ThreadPoolExecutor-0_1 - INFO - Processed Cheap Old Houses S01E09 -> /volumes/barbossa/upload/tor/Cheap Old Houses - Season 01
+2025-06-12 09:18:56,975 - ThreadPoolExecutor-0_3 - INFO - Processed Cheap Old Houses S01E06 -> /volumes/barbossa/upload/tor/Cheap Old Houses - Season 01
+2025-06-12 09:18:56,975 - MainThread - INFO - Processing complete: 10 successful, 0 failed
+2025-06-12 09:20:25,969 - ThreadPoolExecutor-0_0 - DEBUG - Found 0 media files in /Volumes/barbossa/upload/upl/Cheap Old Houses/S01/Cheap Old Houses_S01E05_Monster Midwest Mansions.mkv
+2025-06-12 09:20:25,969 - ThreadPoolExecutor-0_0 - WARNING - No media files found in /Volumes/barbossa/upload/upl/Cheap Old Houses/S01/Cheap Old Houses_S01E05_Monster Midwest Mansions.mkv
+2025-06-12 09:20:25,969 - ThreadPoolExecutor-0_2 - DEBUG - Found 0 media files in /Volumes/barbossa/upload/upl/Cheap Old Houses/S01/Cheap Old Houses_S01E04_A Midcentury Gem Under $150K.mkv
+2025-06-12 09:20:25,969 - ThreadPoolExecutor-0_2 - WARNING - No media files found in /Volumes/barbossa/upload/upl/Cheap Old Houses/S01/Cheap Old Houses_S01E04_A Midcentury Gem Under $150K.mkv
+2025-06-12 09:20:25,969 - ThreadPoolExecutor-0_1 - DEBUG - Found 0 media files in /Volumes/barbossa/upload/upl/Cheap Old Houses/S01/Cheap Old Houses_S01E08_A Hotel for $8 a Square Foot.mkv
+2025-06-12 09:20:25,969 - ThreadPoolExecutor-0_1 - WARNING - No media files found in /Volumes/barbossa/upload/upl/Cheap Old Houses/S01/Cheap Old Houses_S01E08_A Hotel for $8 a Square Foot.mkv
+2025-06-12 09:20:25,969 - ThreadPoolExecutor-0_3 - DEBUG - Found 0 media files in /Volumes/barbossa/upload/upl/Cheap Old Houses/S01/Cheap Old Houses_S01E03_ITS_ SO_ OLD_ Built in 1750.mkv
+2025-06-12 09:20:25,969 - ThreadPoolExecutor-0_3 - WARNING - No media files found in /Volumes/barbossa/upload/upl/Cheap Old Houses/S01/Cheap Old Houses_S01E03_ITS_ SO_ OLD_ Built in 1750.mkv
+2025-06-12 09:20:25,970 - ThreadPoolExecutor-0_0 - DEBUG - Found 0 media files in /Volumes/barbossa/upload/upl/Cheap Old Houses/S01/Cheap Old Houses_S01E07_Cheap Old Farmhouse Dreams!.mkv
+2025-06-12 09:20:25,970 - ThreadPoolExecutor-0_0 - WARNING - No media files found in /Volumes/barbossa/upload/upl/Cheap Old Houses/S01/Cheap Old Houses_S01E07_Cheap Old Farmhouse Dreams!.mkv
+2025-06-12 09:20:25,970 - ThreadPoolExecutor-0_2 - DEBUG - Found 0 media files in /Volumes/barbossa/upload/upl/Cheap Old Houses/S01/Cheap Old Houses_S01E02_Peoria_ Cheap Old House Heaven.mkv
+2025-06-12 09:20:25,970 - ThreadPoolExecutor-0_2 - WARNING - No media files found in /Volumes/barbossa/upload/upl/Cheap Old Houses/S01/Cheap Old Houses_S01E02_Peoria_ Cheap Old House Heaven.mkv
+2025-06-12 09:20:25,970 - ThreadPoolExecutor-0_1 - DEBUG - Found 0 media files in /Volumes/barbossa/upload/upl/Cheap Old Houses/S01/Cheap Old Houses_S01E09_Cheap Old Barns and Ballrooms!.mkv
+2025-06-12 09:20:25,970 - ThreadPoolExecutor-0_1 - WARNING - No media files found in /Volumes/barbossa/upload/upl/Cheap Old Houses/S01/Cheap Old Houses_S01E09_Cheap Old Barns and Ballrooms!.mkv
+2025-06-12 09:20:25,970 - ThreadPoolExecutor-0_3 - DEBUG - Found 0 media files in /Volumes/barbossa/upload/upl/Cheap Old Houses/S01/Cheap Old Houses_S01E01_Time Warp in Upstate New York.mkv
+2025-06-12 09:20:25,970 - ThreadPoolExecutor-0_3 - WARNING - No media files found in /Volumes/barbossa/upload/upl/Cheap Old Houses/S01/Cheap Old Houses_S01E01_Time Warp in Upstate New York.mkv
+2025-06-12 09:20:25,971 - ThreadPoolExecutor-0_0 - DEBUG - Found 0 media files in /Volumes/barbossa/upload/upl/Cheap Old Houses/S01/Cheap Old Houses_S01E10_The Cheapest Old House.mkv
+2025-06-12 09:20:25,971 - ThreadPoolExecutor-0_0 - WARNING - No media files found in /Volumes/barbossa/upload/upl/Cheap Old Houses/S01/Cheap Old Houses_S01E10_The Cheapest Old House.mkv
+2025-06-12 09:20:25,971 - ThreadPoolExecutor-0_2 - DEBUG - Found 0 media files in /Volumes/barbossa/upload/upl/Cheap Old Houses/S01/Cheap Old Houses_S01E06_Playful Indiana Victorians.mkv
+2025-06-12 09:20:25,971 - ThreadPoolExecutor-0_2 - WARNING - No media files found in /Volumes/barbossa/upload/upl/Cheap Old Houses/S01/Cheap Old Houses_S01E06_Playful Indiana Victorians.mkv
+2025-06-12 09:20:25,971 - MainThread - INFO - Processing complete: 0 successful, 10 failed
+2025-06-12 09:23:34,767 - ThreadPoolExecutor-0_0 - DEBUG - Found 1 media files in /Volumes/barbossa/upload/upl/Cheap Old Houses/S01/Cheap Old Houses_S01E05_Monster Midwest Mansions.mkv
+2025-06-12 09:23:34,767 - ThreadPoolExecutor-0_2 - DEBUG - Found 1 media files in /Volumes/barbossa/upload/upl/Cheap Old Houses/S01/Cheap Old Houses_S01E04_A Midcentury Gem Under $150K.mkv
+2025-06-12 09:23:34,767 - ThreadPoolExecutor-0_3 - DEBUG - Found 1 media files in /Volumes/barbossa/upload/upl/Cheap Old Houses/S01/Cheap Old Houses_S01E03_ITS_ SO_ OLD_ Built in 1750.mkv
+2025-06-12 09:23:34,768 - ThreadPoolExecutor-0_1 - DEBUG - Found 1 media files in /Volumes/barbossa/upload/upl/Cheap Old Houses/S01/Cheap Old Houses_S01E08_A Hotel for $8 a Square Foot.mkv
+2025-06-12 09:23:45,474 - ThreadPoolExecutor-0_1 - DEBUG - Copied 4 media files to /volumes/barbossa/upload/tor/Cheap Old Houses - Season 01
+2025-06-12 09:23:45,477 - ThreadPoolExecutor-0_1 - INFO - Processed Cheap Old Houses S01E08 -> /volumes/barbossa/upload/tor/Cheap Old Houses - Season 01 (4 files)
+2025-06-12 09:23:45,491 - ThreadPoolExecutor-0_1 - DEBUG - Found 1 media files in /Volumes/barbossa/upload/upl/Cheap Old Houses/S01/Cheap Old Houses_S01E07_Cheap Old Farmhouse Dreams!.mkv
+2025-06-12 09:23:45,878 - ThreadPoolExecutor-0_2 - DEBUG - Copied 5 media files to /volumes/barbossa/upload/tor/Cheap Old Houses - Season 01
+2025-06-12 09:23:45,879 - ThreadPoolExecutor-0_2 - INFO - Processed Cheap Old Houses S01E04 -> /volumes/barbossa/upload/tor/Cheap Old Houses - Season 01 (5 files)
+2025-06-12 09:23:45,880 - ThreadPoolExecutor-0_3 - DEBUG - Copied 5 media files to /volumes/barbossa/upload/tor/Cheap Old Houses - Season 01
+2025-06-12 09:23:45,880 - ThreadPoolExecutor-0_2 - DEBUG - Found 1 media files in /Volumes/barbossa/upload/upl/Cheap Old Houses/S01/Cheap Old Houses_S01E02_Peoria_ Cheap Old House Heaven.mkv
+2025-06-12 09:23:45,881 - ThreadPoolExecutor-0_3 - INFO - Processed Cheap Old Houses S01E03 -> /volumes/barbossa/upload/tor/Cheap Old Houses - Season 01 (5 files)
+2025-06-12 09:23:45,950 - ThreadPoolExecutor-0_3 - DEBUG - Found 1 media files in /Volumes/barbossa/upload/upl/Cheap Old Houses/S01/Cheap Old Houses_S01E09_Cheap Old Barns and Ballrooms!.mkv
+2025-06-12 09:23:46,559 - ThreadPoolExecutor-0_0 - DEBUG - Copied 7 media files to /volumes/barbossa/upload/tor/Cheap Old Houses - Season 01
+2025-06-12 09:23:46,560 - ThreadPoolExecutor-0_0 - INFO - Processed Cheap Old Houses S01E05 -> /volumes/barbossa/upload/tor/Cheap Old Houses - Season 01 (7 files)
+2025-06-12 09:23:46,564 - ThreadPoolExecutor-0_0 - DEBUG - Found 1 media files in /Volumes/barbossa/upload/upl/Cheap Old Houses/S01/Cheap Old Houses_S01E01_Time Warp in Upstate New York.mkv
+2025-06-12 09:23:51,913 - ThreadPoolExecutor-0_1 - DEBUG - Copied 8 media files to /volumes/barbossa/upload/tor/Cheap Old Houses - Season 01
+2025-06-12 09:23:51,916 - ThreadPoolExecutor-0_1 - INFO - Processed Cheap Old Houses S01E07 -> /volumes/barbossa/upload/tor/Cheap Old Houses - Season 01 (8 files)
+2025-06-12 09:23:51,926 - ThreadPoolExecutor-0_1 - DEBUG - Found 1 media files in /Volumes/barbossa/upload/upl/Cheap Old Houses/S01/Cheap Old Houses_S01E10_The Cheapest Old House.mkv
+2025-06-12 09:23:53,757 - ThreadPoolExecutor-0_3 - DEBUG - Copied 9 media files to /volumes/barbossa/upload/tor/Cheap Old Houses - Season 01
+2025-06-12 09:23:53,759 - ThreadPoolExecutor-0_3 - INFO - Processed Cheap Old Houses S01E09 -> /volumes/barbossa/upload/tor/Cheap Old Houses - Season 01 (9 files)
+2025-06-12 09:23:53,763 - ThreadPoolExecutor-0_3 - DEBUG - Found 1 media files in /Volumes/barbossa/upload/upl/Cheap Old Houses/S01/Cheap Old Houses_S01E06_Playful Indiana Victorians.mkv
+2025-06-12 09:24:01,613 - ThreadPoolExecutor-0_1 - DEBUG - Copied 10 media files to /volumes/barbossa/upload/tor/Cheap Old Houses - Season 01
+2025-06-12 09:24:01,615 - ThreadPoolExecutor-0_1 - INFO - Processed Cheap Old Houses S01E10 -> /volumes/barbossa/upload/tor/Cheap Old Houses - Season 01 (10 files)
+2025-06-12 09:24:08,568 - ThreadPoolExecutor-0_2 - DEBUG - Copied 10 media files to /volumes/barbossa/upload/tor/Cheap Old Houses - Season 01
+2025-06-12 09:24:08,569 - ThreadPoolExecutor-0_2 - INFO - Processed Cheap Old Houses S01E02 -> /volumes/barbossa/upload/tor/Cheap Old Houses - Season 01 (10 files)
+2025-06-12 09:24:18,355 - ThreadPoolExecutor-0_0 - DEBUG - Copied 10 media files to /volumes/barbossa/upload/tor/Cheap Old Houses - Season 01
+2025-06-12 09:24:18,356 - ThreadPoolExecutor-0_0 - INFO - Processed Cheap Old Houses S01E01 -> /volumes/barbossa/upload/tor/Cheap Old Houses - Season 01 (10 files)
+2025-06-12 09:24:18,533 - ThreadPoolExecutor-0_3 - DEBUG - Copied 10 media files to /volumes/barbossa/upload/tor/Cheap Old Houses - Season 01
+2025-06-12 09:24:18,534 - ThreadPoolExecutor-0_3 - INFO - Processed Cheap Old Houses S01E06 -> /volumes/barbossa/upload/tor/Cheap Old Houses - Season 01 (10 files)
+2025-06-12 09:24:18,534 - MainThread - INFO - Processing complete: 10 successful, 0 failed
