@@ -228,7 +228,8 @@ def create_database():
             CREATE TABLE oil_change (
                 it_checksum TEXT,
                 file_loc TEXT,
-                it_torrent TEXT
+                it_torrent TEXT,
+                oc_name TEXT
             );
             
             CREATE TABLE qtr_mile (

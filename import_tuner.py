@@ -320,23 +320,35 @@ def save_to_database(data: List[Dict[str, str]]) -> None:
                 cursor = conn.execute(f"PRAGMA table_info(`{table}`)")
                 columns = [row[1] for row in cursor.fetchall()]
                 
-                # Map columns efficiently
-                column_mapping = [col for col in columns if col in 
-                                 ['it_checksum', 'it_series', 'it_sea_no', 'it_ep_no', 'it_src', 'it_src_link']]
-                
-                if column_mapping:
-                    placeholders = ', '.join(['?'] * len(column_mapping))
-                    columns_str = ', '.join([f'`{col}`' for col in column_mapping])
-                    
-                    batch_data = [
-                        tuple(entry[col] for col in column_mapping)
+                # Handle oil_change table specifically
+                if table == 'oil_change':
+                    # oil_change has: it_checksum, file_loc, it_torrent
+                    oil_change_data = [
+                        (entry['it_checksum'], entry['file_location'], entry['it_torrent'])
                         for entry in data
                     ]
+                    conn.executemany('''
+                        INSERT OR IGNORE INTO oil_change (it_checksum, file_loc, it_torrent)
+                        VALUES (?, ?, ?)
+                    ''', oil_change_data)
+                else:
+                    # Map columns efficiently for other tables
+                    column_mapping = [col for col in columns if col in 
+                                     ['it_checksum', 'it_series', 'it_sea_no', 'it_ep_no', 'it_src', 'it_src_link']]
                     
-                    conn.executemany(f'''
-                        INSERT OR IGNORE INTO `{table}` ({columns_str})
-                        VALUES ({placeholders})
-                    ''', batch_data)
+                    if column_mapping:
+                        placeholders = ', '.join(['?'] * len(column_mapping))
+                        columns_str = ', '.join([f'`{col}`' for col in column_mapping])
+                        
+                        batch_data = [
+                            tuple(entry[col] for col in column_mapping)
+                            for entry in data
+                        ]
+                        
+                        conn.executemany(f'''
+                            INSERT OR IGNORE INTO `{table}` ({columns_str})
+                            VALUES ({placeholders})
+                        ''', batch_data)
                     
             except sqlite3.Error as e:
                 logging.warning(f"Failed to update table {table}: {e}")
