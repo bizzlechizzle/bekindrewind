@@ -371,39 +371,49 @@ def save_to_json(data: List[Dict[str, str]]) -> None:
 
 
 def clean_drag_drop_path(path_str: str) -> str:
-    """Clean up messy drag and drop paths."""
+    """Clean up messy drag and drop paths - improved version."""
     if not path_str:
         return path_str
     
-    # Handle multiple common drag-and-drop path issues
-    cleaned = path_str
+    cleaned = path_str.strip()
     
-    # Remove leading/trailing whitespace
-    cleaned = cleaned.strip()
-    
-    # Remove quotes that wrap the entire path
+    # Remove wrapping quotes
     if ((cleaned.startswith('"') and cleaned.endswith('"')) or 
         (cleaned.startswith("'") and cleaned.endswith("'"))):
         cleaned = cleaned[1:-1]
     
-    # Handle escaped characters common in drag-and-drop
-    cleaned = cleaned.replace('\\ ', ' ')    # Escaped space
-    cleaned = cleaned.replace("\\'", "'")    # Escaped single quote
-    cleaned = cleaned.replace('\\"', '"')    # Escaped double quote
-    cleaned = cleaned.replace('\\!', '!')    # Escaped exclamation mark
-    cleaned = cleaned.replace('\\(', '(')    # Escaped parenthesis
-    cleaned = cleaned.replace('\\)', ')')    # Escaped parenthesis
-    cleaned = cleaned.replace('\\[', '[')    # Escaped bracket
-    cleaned = cleaned.replace('\\]', ']')    # Escaped bracket
-    cleaned = cleaned.replace('\\&', '&')    # Escaped ampersand
+    # IMPORTANT: Test if path exists as-is first (for shell-escaped paths)
+    # This handles cases where the path is already properly escaped
+    try:
+        test_path = Path(cleaned).expanduser()
+        if test_path.exists():
+            return cleaned
+    except (OSError, RuntimeError):
+        pass
     
-    # Handle double backslashes (but do this after the above replacements)
-    cleaned = cleaned.replace('\\\\', '\\')
+    # If path doesn't exist as-is, try unescaping common shell escapes
+    unescaped = cleaned
+    unescaped = unescaped.replace('\\ ', ' ')    # Escaped space
+    unescaped = unescaped.replace("\\'", "'")    # Escaped single quote
+    unescaped = unescaped.replace('\\"', '"')    # Escaped double quote
+    unescaped = unescaped.replace('\\!', '!')    # Escaped exclamation mark
+    unescaped = unescaped.replace('\\(', '(')    # Escaped parenthesis
+    unescaped = unescaped.replace('\\)', ')')    # Escaped parenthesis
+    unescaped = unescaped.replace('\\[', '[')    # Escaped bracket
+    unescaped = unescaped.replace('\\]', ']')    # Escaped bracket
+    unescaped = unescaped.replace('\\&', '&')    # Escaped ampersand
+    unescaped = unescaped.replace('\\\\', '\\')  # Double backslash
     
-    # Remove any remaining leading/trailing quotes or spaces
-    cleaned = cleaned.strip('\'"')
+    # Test if unescaped version exists
+    try:
+        test_unescaped = Path(unescaped).expanduser()
+        if test_unescaped.exists():
+            return unescaped
+    except (OSError, RuntimeError):
+        pass
     
-    return cleaned
+    # If neither version works, return the cleaned version (remove final quotes/spaces)
+    return cleaned.strip('\'"')
 
 
 def main():
@@ -427,7 +437,7 @@ def main():
             logging.info("User cancelled directory input")
             return
     
-    # Clean up drag and drop path
+    # Clean up drag and drop path with improved logic
     target_path = clean_drag_drop_path(target_path)
     
     try:

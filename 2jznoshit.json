@@ -6,7 +6,7 @@
     "logs": false
   },
   "import_tuner": {
-    "logs": false,
+    "logs": true,
     "json": false
   },
   "miata_info": {

@@ -46,7 +46,8 @@ def create_database():
                 it_src TEXT,
                 it_src_link TEXT,
                 it_torrent TEXT,
-                it_ep_avl INTEGER DEFAULT 0
+                it_ep_avl INTEGER DEFAULT 0,
+                it_def_loc TEXT
             );
             
             CREATE TABLE ford_probe (
@@ -223,13 +224,6 @@ def create_database():
                 tvdb_src_link TEXT,
                 tvdb_sea_avl TEXT,
                 tvdb_ep_avl TEXT
-            );
-            
-            CREATE TABLE oil_change (
-                it_checksum TEXT,
-                file_loc TEXT,
-                it_torrent TEXT,
-                oc_name TEXT
             );
             
             CREATE TABLE qtr_mile (
