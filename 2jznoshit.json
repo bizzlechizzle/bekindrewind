@@ -6,7 +6,7 @@
     "logs": false
   },
   "import_tuner": {
-    "logs": true,
+    "logs": false,
     "json": false
   },
   "miata_info": {
@@ -55,7 +55,13 @@
   "fast_five": {
     "logs": false
   },
+  "galo12": {
+    "logs": false
+  },
   "oil_change": {
+    "logs": true
+  },
+  "fast_six": {
     "logs": true
   },
   "release_group": {
@@ -74,7 +80,7 @@
       "it_src_short": "AMZN.WEB-DL",
       "it_torrent": "season",
       "timeout": "5 seconds",
-      "def_loc": "/volumes/barbossa/upload/tor"
+      "def_loc": "/Volumes/barbossa/upload/tor"
     }
   },
   "library": {

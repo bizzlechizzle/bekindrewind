@@ -1,565 +1,886 @@
 #!/usr/bin/env python3
 """
-oil_change - Media file organization and relocation utility
-Follows exact specifications for cleaning, restructuring, and moving media files.
+oil_change.py - Media file organization and copying script
+Bulletproof version with comprehensive error handling and validation
 """
 
 import json
 import sqlite3
 import os
-import shutil
-import hashlib
-import logging
-from pathlib import Path
-from typing import Dict, List, Tuple, Optional, Set
-from concurrent.futures import ThreadPoolExecutor, as_completed
 import sys
+import shutil
+import subprocess
+import logging
+import threading
+from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Dict, List, Tuple, Optional, Set
+import hashlib
+import time
+import platform
 import re
-
+from contextlib import contextmanager
 
 class MediaOrganizer:
-    VALID_TORRENT_TYPES = {'series', 'season', 'episode', 'all'}
-    VIDEO_EXTENSIONS = {'.mkv', '.mp4', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v', '.ts', '.m2ts'}
-    SUBTITLE_EXTENSIONS = {'.srt', '.ass', '.ssa', '.vtt', '.sub', '.idx', '.sup'}
-    
     def __init__(self):
-        self.config = {}
-        self.db_conn = None
-        # Initialize basic logger immediately to prevent NoneType errors
-        logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
-        self.logger = logging.getLogger(__name__)
+        self.config = None
+        self.db_file = 'danger2manifold.db'
+        self.config_file = '2jznoshit.json'
+        self.logger = self._setup_basic_logger()
+        self.processed_files: Set[str] = set()
+        self.db_lock = threading.Lock()
+        self.processed_lock = threading.Lock()
+        
+    def _setup_basic_logger(self):
+        """Setup a basic logger that's always available"""
+        logger = logging.getLogger(__name__)
+        if not logger.handlers:
+            handler = logging.StreamHandler(sys.stdout)
+            formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+            handler.setFormatter(formatter)
+            logger.addHandler(handler)
+            logger.setLevel(logging.INFO)
+        return logger
         
     def setup_logging(self, enable_logs: bool) -> None:
-        """Configure logging based on user preferences - STEP 1 requirement."""
-        # Clear any existing handlers to avoid duplication
-        for handler in logging.root.handlers[:]:
-            logging.root.removeHandler(handler)
-        
-        log_level = logging.DEBUG if enable_logs else logging.WARNING
-        
-        handlers = [logging.StreamHandler(sys.stdout)]
-        if enable_logs:
-            try:
-                handlers.append(logging.FileHandler('oil_change.log', mode='w'))
-            except (OSError, IOError) as e:
-                print(f"WARNING: Could not create log file: {e}")
+        """Configure logging based on user preferences"""
+        # Clear existing handlers
+        for handler in self.logger.handlers[:]:
+            self.logger.removeHandler(handler)
             
-        logging.basicConfig(
-            level=log_level,
-            format='%(asctime)s - %(levelname)s - %(funcName)s:%(lineno)d - %(message)s',
-            handlers=handlers,
-            force=True
-        )
+        if enable_logs:
+            # Setup detailed logging to file and console
+            log_file = f'oil_change_{int(time.time())}.log'
+            file_handler = logging.FileHandler(log_file)
+            console_handler = logging.StreamHandler(sys.stdout)
+            
+            formatter = logging.Formatter('%(asctime)s - %(threadName)s - %(levelname)s - %(message)s')
+            file_handler.setFormatter(formatter)
+            console_handler.setFormatter(formatter)
+            
+            self.logger.addHandler(file_handler)
+            self.logger.addHandler(console_handler)
+            self.logger.setLevel(logging.DEBUG)
+            
+            self.logger.info(f"Detailed logging enabled - log file: {log_file}")
+        else:
+            # Minimal console logging
+            handler = logging.StreamHandler(sys.stdout)
+            formatter = logging.Formatter('%(levelname)s: %(message)s')
+            handler.setFormatter(formatter)
+            self.logger.addHandler(handler)
+            self.logger.setLevel(logging.INFO)
         
-        # Reinitialize logger with new config
-        self.logger = logging.getLogger(__name__)
-        self.logger.debug("Logging reconfigured with full debug and verbose tracking")
-
+        # Log system info for debugging
+        if enable_logs:
+            self.logger.debug(f"System: {platform.system()} {platform.release()}")
+            self.logger.debug(f"Python: {sys.version}")
+            self.logger.debug(f"Current working directory: {os.getcwd()}")
+    
     def load_config(self) -> Dict:
-        """STEP 1: Load user preferences from 2jznoshit.json."""
-        config_path = Path('2jznoshit.json')
-        if not config_path.exists():
-            print("FATAL: 2jznoshit.json not found in current directory")
+        """Load and validate user preferences from 2jznoshit.json"""
+        if not os.path.exists(self.config_file):
+            self.logger.error(f"Configuration file not found: {self.config_file}")
             sys.exit(1)
             
         try:
-            with open(config_path, 'r', encoding='utf-8') as f:
+            with open(self.config_file, 'r', encoding='utf-8') as f:
                 config = json.load(f)
-                
-            # Validate required structure
-            if 'oil_change' not in config:
-                print("FATAL: 'oil_change' section missing from config")
+            
+            # Validate required config sections
+            required_sections = ['oil_change', 'user_input']
+            for section in required_sections:
+                if section not in config:
+                    self.logger.error(f"Missing required section '{section}' in config")
+                    sys.exit(1)
+            
+            if 'default' not in config['user_input']:
+                self.logger.error("Missing 'user_input.default' section in config")
                 sys.exit(1)
                 
-            if 'user_input' not in config or 'default' not in config['user_input']:
-                print("FATAL: 'user_input.default' section missing from config")
+            default_config = config['user_input']['default']
+            if 'def_loc' not in default_config or not default_config['def_loc']:
+                self.logger.error("Missing or empty 'def_loc' in user_input.default")
                 sys.exit(1)
-                
-            if 'def_loc' not in config['user_input']['default']:
-                print("FATAL: 'def_loc' not found in user_input.default")
+            
+            # Validate def_loc path
+            def_loc = default_config['def_loc']
+            if not os.path.isabs(def_loc):
+                self.logger.error(f"def_loc must be an absolute path: {def_loc}")
                 sys.exit(1)
-                
-            if self.logger:
-                self.logger.debug(f"Config loaded successfully: oil_change.logs={config['oil_change'].get('logs', False)}")
+            
+            self.config = config
+            self.logger.info(f"Configuration loaded successfully from {self.config_file}")
+            self.logger.debug(f"def_loc: {def_loc}")
+            self.logger.debug(f"logs enabled: {config.get('oil_change', {}).get('logs', False)}")
+            
             return config
             
         except json.JSONDecodeError as e:
-            print(f"FATAL: Invalid JSON in 2jznoshit.json: {e}")
+            self.logger.error(f"Invalid JSON in config file: {e}")
             sys.exit(1)
         except Exception as e:
-            print(f"FATAL: Error reading config file: {e}")
+            self.logger.error(f"Failed to load config: {e}")
             sys.exit(1)
-
-    def connect_db(self) -> sqlite3.Connection:
-        """STEP 2: Connect to danger2manifold.db database."""
-        db_path = Path('danger2manifold.db')
-        if not db_path.exists():
-            if self.logger:
-                self.logger.error("FATAL: danger2manifold.db not found in current directory")
-            else:
-                print("FATAL: danger2manifold.db not found in current directory")
-            sys.exit(1)
+    
+    @contextmanager
+    def get_db_connection(self):
+        """Thread-safe database connection context manager"""
+        if not os.path.exists(self.db_file):
+            self.logger.error(f"Database file not found: {self.db_file}")
+            raise FileNotFoundError(f"Database not found: {self.db_file}")
             
+        conn = None
         try:
-            conn = sqlite3.connect(str(db_path), timeout=30.0)
-            conn.row_factory = sqlite3.Row
-            conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute("PRAGMA synchronous=NORMAL")
-            
-            # Verify import_tuner table exists
-            cursor = conn.cursor()
-            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='import_tuner'")
-            if not cursor.fetchone():
-                if self.logger:
-                    self.logger.error("FATAL: import_tuner table not found in database")
-                else:
-                    print("FATAL: import_tuner table not found in database")
-                sys.exit(1)
+            with self.db_lock:
+                conn = sqlite3.connect(self.db_file, timeout=30.0)
+                conn.row_factory = sqlite3.Row
                 
-            if self.logger:
-                self.logger.debug("Database connection established to danger2manifold.db")
-            return conn
-            
+                # Verify table and columns exist
+                cursor = conn.cursor()
+                cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='import_tuner'")
+                if not cursor.fetchone():
+                    raise ValueError("Table 'import_tuner' not found in database")
+                
+                # Check required columns
+                cursor.execute("PRAGMA table_info(import_tuner)")
+                columns = [row[1] for row in cursor.fetchall()]
+                required_columns = ['it_checksum', 'it_torrent', 'it_sea_no', 'it_ep_no', 
+                                  'file_location', 'it_series', 'it_ep_title', 'it_def_loc']
+                
+                missing_columns = [col for col in required_columns if col not in columns]
+                if missing_columns:
+                    raise ValueError(f"Missing required columns: {missing_columns}")
+                
+                yield conn
+                
         except sqlite3.Error as e:
-            if self.logger:
-                self.logger.error(f"FATAL: Database connection failed: {e}")
-            else:
-                print(f"FATAL: Database connection failed: {e}")
-            sys.exit(1)
-
-    def get_import_tuner_data(self) -> List[Dict]:
-        """STEP 2: Fetch all records from import_tuner table only."""
+            self.logger.error(f"Database error: {e}")
+            raise
+        finally:
+            if conn:
+                conn.close()
+    
+    def get_import_data(self) -> List[Dict]:
+        """Fetch and validate all records from import_tuner table"""
         try:
-            cursor = self.db_conn.cursor()
-            cursor.execute("""
-                SELECT file_location, file_name, it_checksum, it_def_loc, it_ep_avl, 
-                       it_ep_no, it_ep_title, it_sea_no, it_series, it_special, 
-                       it_src, it_src_link, it_subtitles, it_torrent
-                FROM import_tuner
-                ORDER BY it_series, it_sea_no, it_ep_no
-            """)
-            rows = cursor.fetchall()
-            
-            if not rows:
-                self.logger.warning("No records found in import_tuner table")
-                return []
-            
-            data = []
-            for row in rows:
-                record = dict(row)
+            with self.get_db_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT it_checksum, it_torrent, it_sea_no, it_ep_no, 
+                           file_location, it_series, it_ep_title, it_def_loc
+                    FROM import_tuner
+                    WHERE file_location IS NOT NULL 
+                    AND it_checksum IS NOT NULL
+                    AND it_series IS NOT NULL
+                    AND TRIM(file_location) != ''
+                    AND TRIM(it_checksum) != ''
+                    AND TRIM(it_series) != ''
+                """)
                 
-                # Validate critical fields
-                if not record.get('it_checksum'):
-                    self.logger.error(f"SKIP: Missing checksum for {record.get('file_name', 'unknown')}")
-                    continue
+                records = []
+                for row in cursor.fetchall():
+                    # Convert to dict for easier handling
+                    record = dict(row)
                     
-                if not record.get('file_location'):
-                    self.logger.error(f"SKIP: Missing file_location for {record.get('it_checksum', 'unknown')}")
-                    continue
-                    
-                if not record.get('it_torrent'):
-                    self.logger.warning(f"Missing it_torrent for {record['it_checksum']}, using 'season' default")
-                    record['it_torrent'] = 'season'
-                    
-                # Validate torrent type
-                if record['it_torrent'] not in self.VALID_TORRENT_TYPES:
-                    self.logger.error(f"INVALID: it_torrent '{record['it_torrent']}' not in {self.VALID_TORRENT_TYPES}")
-                    continue
-                    
-                data.append(record)
-            
-            self.logger.debug(f"Retrieved {len(data)} valid records from import_tuner table")
-            return data
-            
-        except sqlite3.Error as e:
-            self.logger.error(f"FATAL: Database query failed: {e}")
-            sys.exit(1)
-
-    def clean_folders(self, folders_to_clean: Set[str]) -> None:
-        """STEP 3: Clean folders - remove non-video/subtitle files, keep only media files."""
-        self.logger.debug(f"Cleaning {len(folders_to_clean)} folders")
+                    # Validate and clean data
+                    if not self._validate_record(record):
+                        continue
+                        
+                    records.append(record)
+                
+                self.logger.info(f"Found {len(records)} valid records in import_tuner table")
+                return records
+                
+        except Exception as e:
+            self.logger.error(f"Failed to fetch import data: {e}")
+            return []
+    
+    def _validate_record(self, record: Dict) -> bool:
+        """Validate a single record has all required data"""
+        required_fields = ['it_checksum', 'file_location', 'it_series']
         
-        for folder_path in folders_to_clean:
-            path = Path(folder_path)
-            if not path.exists():
-                self.logger.warning(f"Folder does not exist, skipping: {folder_path}")
-                continue
-                
-            self.logger.debug(f"Cleaning folder: {folder_path}")
-            files_removed = 0
-            dirs_removed = 0
-            
-            # Walk from bottom up to handle nested directories
-            for root, dirs, files in os.walk(path, topdown=False):
-                root_path = Path(root)
-                
-                # Remove non-media files
-                for file in files:
-                    file_path = root_path / file
-                    file_ext = file_path.suffix.lower()
-                    
-                    if (file_ext not in self.VIDEO_EXTENSIONS and 
-                        file_ext not in self.SUBTITLE_EXTENSIONS):
-                        try:
-                            file_path.unlink()
-                            files_removed += 1
-                            self.logger.debug(f"Removed non-media file: {file_path}")
-                        except OSError as e:
-                            self.logger.warning(f"Failed to remove file {file_path}: {e}")
-                
-                # Remove empty directories (but not the root folder we're cleaning)
-                if root_path != path:
-                    try:
-                        if not any(root_path.iterdir()):
-                            root_path.rmdir()
-                            dirs_removed += 1
-                            self.logger.debug(f"Removed empty directory: {root_path}")
-                    except OSError:
-                        pass  # Directory not empty or permission issue
-            
-            self.logger.debug(f"Cleaned {folder_path}: {files_removed} files, {dirs_removed} directories removed")
-
-    def normalize_name(self, name: str) -> str:
-        """Normalize names with proper capitalization and no duplication."""
+        for field in required_fields:
+            if not record.get(field) or not str(record[field]).strip():
+                self.logger.warning(f"Invalid record - missing {field}: {record.get('it_checksum', 'unknown')}")
+                return False
+        
+        # Validate torrent type
+        torrent_type = str(record.get('it_torrent', 'season')).lower().strip()
+        valid_types = ['series', 'season', 'episode', 'all']
+        if torrent_type not in valid_types:
+            self.logger.warning(f"Invalid torrent type '{torrent_type}', defaulting to 'season'")
+            record['it_torrent'] = 'season'
+        
+        # Validate checksum format (should be 64 char hex)
+        checksum = record['it_checksum'].strip()
+        if not re.match(r'^[a-fA-F0-9]{64}$', checksum):
+            self.logger.warning(f"Invalid checksum format: {checksum}")
+            return False
+        
+        return True
+    
+    def normalize_folder_name(self, name: str) -> str:
+        """Safely normalize folder names with proper error handling"""
         if not name:
-            return ""
-            
-        # Clean up the name
+            return "Unknown"
+        
+        # Clean the input
         name = str(name).strip()
-        name = re.sub(r'\s+', ' ', name)  # Multiple spaces to single space
+        if not name:
+            return "Unknown"
         
-        # Title case
-        name = name.title()
+        # Remove/replace problematic characters for filesystem
+        # Keep alphanumeric, spaces, hyphens, periods, and parentheses
+        cleaned = re.sub(r'[<>:"/\\|?*]', '', name)
+        cleaned = re.sub(r'\s+', ' ', cleaned).strip()
         
-        # Fix common issues
-        name = re.sub(r'\bS(\d+)\b', r'Season \1', name)  # S01 -> Season 01
-        name = re.sub(r'\bE(\d+)\b', r'Episode \1', name)  # E01 -> Episode 01
+        if not cleaned:
+            return "Unknown"
         
-        # Remove duplicate words (case insensitive)
-        words = name.split()
-        normalized_words = []
-        prev_word_lower = None
+        # Handle season/episode normalization
+        # Convert "season 1" -> "Season 01", "episode 9" -> "Episode 09"
+        season_match = re.match(r'^season\s+(\d+)$', cleaned.lower())
+        if season_match:
+            season_num = int(season_match.group(1))
+            return f"Season {season_num:02d}"
+        
+        episode_match = re.match(r'^episode\s+(\d+)$', cleaned.lower())
+        if episode_match:
+            episode_num = int(episode_match.group(1))
+            return f"Episode {episode_num:02d}"
+        
+        # Title case for series names, but preserve certain words
+        words = cleaned.split()
+        result_words = []
         
         for word in words:
-            word_lower = word.lower()
-            if word_lower != prev_word_lower:
-                normalized_words.append(word)
-            prev_word_lower = word_lower
+            # Preserve common abbreviations and Roman numerals
+            if word.upper() in ['TV', 'DVD', 'HD', 'US', 'UK', 'II', 'III', 'IV', 'VI', 'VII', 'VIII', 'IX', 'XI']:
+                result_words.append(word.upper())
+            elif word.lower() in ['a', 'an', 'the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with']:
+                # Keep articles/prepositions lowercase unless they're the first word
+                if not result_words:  # First word
+                    result_words.append(word.capitalize())
+                else:
+                    result_words.append(word.lower())
+            else:
+                result_words.append(word.capitalize())
         
-        result = ' '.join(normalized_words)
+        result = ' '.join(result_words)
         
-        # Ensure no double "Episode" or "Season"
-        result = re.sub(r'\b(Episode|Season)\s+\1\b', r'\1', result, flags=re.IGNORECASE)
+        # Final cleanup - remove any double spaces and trim
+        result = re.sub(r'\s+', ' ', result).strip()
         
-        return result
-
-    def create_folder_structure(self, records: List[Dict], def_loc: str) -> Dict[str, str]:
-        """STEP 4: Create folder structure in def_loc based on it_torrent preferences."""
-        def_path = Path(def_loc)
-        
-        # Create base def_loc if it doesn't exist
+        return result or "Unknown"
+    
+    def create_folder_structure(self, record: Dict, def_loc: str) -> str:
+        """Create appropriate folder structure based on torrent type"""
         try:
-            def_path.mkdir(parents=True, exist_ok=True)
-            self.logger.debug(f"Ensured def_loc exists: {def_loc}")
-        except OSError as e:
-            self.logger.error(f"FATAL: Cannot create def_loc {def_loc}: {e}")
-            sys.exit(1)
-        
-        folder_map = {}  # checksum -> destination_folder_path
-        
-        for record in records:
-            checksum = record['it_checksum']
-            series = self.normalize_name(record.get('it_series', ''))
-            season = self.normalize_name(record.get('it_sea_no', ''))
-            episode = self.normalize_name(record.get('it_ep_no', ''))
-            torrent_type = record['it_torrent']
+            torrent_type = str(record['it_torrent']).lower().strip()
+            series = self.normalize_folder_name(record['it_series'])
+            season = self.normalize_folder_name(record.get('it_sea_no', ''))
+            episode = self.normalize_folder_name(record.get('it_ep_no', ''))
             
-            if not series:
-                self.logger.error(f"SKIP: Missing series name for checksum {checksum}")
-                continue
+            base_path = Path(def_loc)
             
-            try:
-                if torrent_type == 'series':
-                    # Default Folder Layout: Series/Season/
-                    series_path = def_path / series
-                    season_path = series_path / season if season else series_path
-                    season_path.mkdir(parents=True, exist_ok=True)
-                    folder_map[checksum] = str(season_path)
-                    
-                elif torrent_type == 'all':
-                    # Same as series - recreate same folder structure
-                    series_path = def_path / series
-                    season_path = series_path / season if season else series_path
-                    season_path.mkdir(parents=True, exist_ok=True)
-                    folder_map[checksum] = str(season_path)
-                    
-                elif torrent_type == 'season':
-                    # Per Season Layout: "Series - Season XX"
-                    if season:
-                        season_folder = f"{series} - {season}"
-                    else:
-                        season_folder = series
-                    season_path = def_path / season_folder
-                    season_path.mkdir(parents=True, exist_ok=True)
-                    folder_map[checksum] = str(season_path)
-                    
-                elif torrent_type == 'episode':
-                    # Per Episode Layout: "Series - Season XX - Episode XX"
-                    if season and episode:
-                        episode_folder = f"{series} - {season} - {episode}"
-                    elif season:
-                        episode_folder = f"{series} - {season}"
-                    else:
-                        episode_folder = series
-                    episode_path = def_path / episode_folder
-                    episode_path.mkdir(parents=True, exist_ok=True)
-                    folder_map[checksum] = str(episode_path)
-                    
-                self.logger.debug(f"Created folder for {checksum}: {folder_map[checksum]}")
+            self.logger.debug(f"Creating structure - Series: '{series}', Season: '{season}', Episode: '{episode}', Type: '{torrent_type}'")
+            
+            if torrent_type in ['series', 'all']:
+                # Series/Season/Files structure
+                if not season or season == "Unknown":
+                    season = "Season 01"
+                season_folder = f"{series} - {season}"
+                target_path = base_path / series / season_folder
                 
-            except OSError as e:
-                self.logger.error(f"Failed to create folder structure for {checksum}: {e}")
-                continue
-        
-        self.logger.debug(f"Created folder structure for {len(folder_map)} items")
-        return folder_map
-
-    def verify_checksum(self, file_path: str, expected_checksum: str) -> bool:
-        """Verify file integrity using SHA256 checksum."""
-        if not expected_checksum:
-            return False
+            elif torrent_type == 'season':
+                # Season/Files structure (your Per Season Layout)
+                if not season or season == "Unknown":
+                    season = "Season 01"
+                season_folder = f"{series} - {season}"
+                target_path = base_path / season_folder
+                
+            elif torrent_type == 'episode':
+                # Episode/Files structure (your Per Episode Layout)
+                if not season or season == "Unknown":
+                    season = "Season 01"
+                if not episode or episode == "Unknown":
+                    episode = "Episode 01"
+                episode_folder = f"{series} - {season} - {episode}"
+                target_path = base_path / episode_folder
+                
+            else:
+                # Default to season structure
+                self.logger.warning(f"Unknown torrent type: {torrent_type}, using season structure")
+                if not season or season == "Unknown":
+                    season = "Season 01"
+                season_folder = f"{series} - {season}"
+                target_path = base_path / season_folder
             
+            # Ensure path length doesn't exceed filesystem limits
+            if len(str(target_path)) > 250:  # Conservative limit
+                self.logger.warning(f"Path too long, truncating: {target_path}")
+                # Truncate series name if needed
+                series_short = series[:50] + "..." if len(series) > 50 else series
+                if torrent_type == 'episode':
+                    episode_folder = f"{series_short} - {season} - {episode}"
+                    target_path = base_path / episode_folder
+                else:
+                    season_folder = f"{series_short} - {season}"
+                    target_path = base_path / season_folder
+            
+            # Create directory structure with proper error handling
+            try:
+                target_path.mkdir(parents=True, exist_ok=True)
+                self.logger.debug(f"Created directory: {target_path}")
+            except OSError as e:
+                if e.errno == 36:  # File name too long
+                    self.logger.error(f"Filename too long: {target_path}")
+                    raise ValueError(f"Path too long: {target_path}")
+                else:
+                    raise
+            
+            return str(target_path)
+            
+        except Exception as e:
+            self.logger.error(f"Failed to create folder structure for {record.get('it_checksum', 'unknown')}: {e}")
+            raise
+    
+    def check_disk_space(self, file_path: str, destination: str) -> bool:
+        """Check if there's enough disk space for the file"""
+        try:
+            file_size = os.path.getsize(file_path)
+            dest_stat = shutil.disk_usage(destination)
+            available_space = dest_stat.free
+            
+            # Require 10% more space than file size as buffer
+            required_space = int(file_size * 1.1)
+            
+            if available_space < required_space:
+                self.logger.error(f"Insufficient disk space. Need: {required_space:,} bytes, Available: {available_space:,} bytes")
+                return False
+            
+            self.logger.debug(f"Disk space check passed. File: {file_size:,} bytes, Available: {available_space:,} bytes")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Failed to check disk space: {e}")
+            return False
+    
+    def verify_checksum(self, file_path: str, expected_checksum: str) -> bool:
+        """Verify file integrity using SHA256 checksum with progress reporting"""
+        if not expected_checksum or not os.path.exists(file_path):
+            return False
+        
         try:
             sha256_hash = hashlib.sha256()
-            with open(file_path, 'rb') as f:
-                while chunk := f.read(65536):
+            file_size = os.path.getsize(file_path)
+            
+            self.logger.debug(f"Verifying checksum for {os.path.basename(file_path)} ({file_size:,} bytes)")
+            
+            bytes_read = 0
+            last_progress = 0
+            
+            with open(file_path, "rb") as f:
+                while True:
+                    chunk = f.read(8192)
+                    if not chunk:
+                        break
                     sha256_hash.update(chunk)
+                    bytes_read += len(chunk)
+                    
+                    # Report progress for large files (>100MB)
+                    if file_size > 100 * 1024 * 1024:
+                        progress = (bytes_read / file_size) * 100
+                        if progress - last_progress >= 25:  # Report every 25%
+                            self.logger.debug(f"Checksum verification: {progress:.0f}%")
+                            last_progress = progress
             
             calculated = sha256_hash.hexdigest()
-            match = calculated == expected_checksum
+            match = calculated.lower() == expected_checksum.lower()
             
-            if not match:
+            if match:
+                self.logger.debug(f"Checksum verified successfully: {os.path.basename(file_path)}")
+            else:
                 self.logger.error(f"Checksum mismatch for {file_path}")
                 self.logger.error(f"Expected: {expected_checksum}")
-                self.logger.error(f"Calculated: {calculated}")
+                self.logger.error(f"Got: {calculated}")
             
             return match
             
-        except (OSError, IOError) as e:
+        except Exception as e:
             self.logger.error(f"Checksum verification failed for {file_path}: {e}")
             return False
-
-    def copy_file_with_verification(self, src: str, dst: str, checksum: str) -> bool:
-        """Copy file and verify integrity."""
-        src_path = Path(src)
-        dst_path = Path(dst)
-        
-        if not src_path.exists():
-            self.logger.error(f"Source file not found: {src}")
+    
+    def is_rsync_available(self) -> bool:
+        """Check if rsync is available and get its path"""
+        try:
+            # Try common rsync locations
+            rsync_paths = ['rsync']
+            if platform.system() == 'Darwin':  # macOS
+                rsync_paths.extend(['/usr/bin/rsync', '/opt/homebrew/bin/rsync'])
+            elif platform.system() == 'Linux':
+                rsync_paths.extend(['/usr/bin/rsync', '/bin/rsync'])
+            
+            for rsync_path in rsync_paths:
+                try:
+                    result = subprocess.run([rsync_path, '--version'], 
+                                          capture_output=True, text=True, timeout=10)
+                    if result.returncode == 0:
+                        self.logger.debug(f"Found rsync at: {rsync_path}")
+                        return True
+                except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+                    continue
+            
+            self.logger.debug("rsync not found in standard locations")
             return False
-        
-        # Verify source file first
-        if not self.verify_checksum(src, checksum):
-            self.logger.error(f"Source file checksum invalid: {src}")
+            
+        except Exception as e:
+            self.logger.debug(f"Error checking for rsync: {e}")
             return False
+    
+    def copy_file_rsync(self, source: str, destination: str) -> bool:
+        """Copy file using rsync with comprehensive error handling"""
+        if not self.is_rsync_available():
+            self.logger.debug("rsync not available, using fallback method")
+            return self.copy_file_fallback(source, destination)
         
         try:
             # Ensure destination directory exists
-            dst_path.parent.mkdir(parents=True, exist_ok=True)
+            dest_dir = os.path.dirname(destination)
+            os.makedirs(dest_dir, exist_ok=True)
             
-            # Copy with metadata preservation
-            shutil.copy2(src, dst)
-            self.logger.debug(f"Copied file: {src} -> {dst}")
+            # Build rsync command with optimal flags
+            cmd = [
+                'rsync',
+                '-avh',           # archive, verbose, human-readable
+                '--progress',     # show progress
+                '--partial',      # keep partial files
+                '--inplace',      # update destination file in-place
+                '--sparse',       # handle sparse files efficiently
+                '--compress',     # compress during transfer (helps with network copies)
+                source,
+                destination
+            ]
             
-            # Verify destination file
-            if self.verify_checksum(dst, checksum):
-                self.logger.debug(f"Copy verified successfully: {dst}")
-                return True
-            else:
-                # Remove corrupted copy
-                dst_path.unlink(missing_ok=True)
-                self.logger.error(f"Copy verification failed, removed corrupted file: {dst}")
-                return False
-                
-        except (OSError, IOError, shutil.Error) as e:
-            self.logger.error(f"Copy operation failed: {src} -> {dst}: {e}")
-            dst_path.unlink(missing_ok=True)  # Clean up partial copy
-            return False
-
-    def find_subtitle_files(self, video_path: str) -> List[str]:
-        """Find associated subtitle files for a video file."""
-        video_path_obj = Path(video_path)
-        video_stem = video_path_obj.stem
-        video_dir = video_path_obj.parent
-        
-        subtitle_files = []
-        
-        if video_dir.exists():
-            for file_path in video_dir.iterdir():
-                if (file_path.is_file() and 
-                    file_path.suffix.lower() in self.SUBTITLE_EXTENSIONS and
-                    file_path.stem.startswith(video_stem)):
-                    subtitle_files.append(str(file_path))
-        
-        return subtitle_files
-
-    def process_file(self, record: Dict, folder_map: Dict[str, str]) -> Tuple[str, Optional[str]]:
-        """STEP 5: Process a single file record with subtitle handling."""
-        checksum = record['it_checksum']
-        src_path = record['file_location']
-        file_name = record['file_name']
-        
-        if checksum not in folder_map:
-            self.logger.error(f"No destination folder mapping for checksum: {checksum}")
-            return checksum, None
-        
-        dest_folder = folder_map[checksum]
-        dest_file_path = Path(dest_folder) / file_name
-        
-        # Skip if already exists and verified
-        if dest_file_path.exists() and self.verify_checksum(str(dest_file_path), checksum):
-            self.logger.debug(f"File already exists and verified: {dest_file_path}")
-            return checksum, str(dest_file_path)
-        
-        # Copy main video file
-        if not self.copy_file_with_verification(src_path, str(dest_file_path), checksum):
-            return checksum, None
-        
-        # Handle subtitle files
-        subtitle_files = self.find_subtitle_files(src_path)
-        for subtitle_src in subtitle_files:
-            subtitle_name = Path(subtitle_src).name
-            subtitle_dest = Path(dest_folder) / subtitle_name
+            self.logger.debug(f"Running rsync: {' '.join(cmd)}")
             
-            try:
-                if not subtitle_dest.exists():
-                    shutil.copy2(subtitle_src, str(subtitle_dest))
-                    self.logger.debug(f"Copied subtitle: {subtitle_src} -> {subtitle_dest}")
-            except (OSError, IOError, shutil.Error) as e:
-                self.logger.warning(f"Failed to copy subtitle {subtitle_src}: {e}")
-        
-        return checksum, str(dest_file_path)
-
-    def update_database(self, updates: Dict[str, Optional[str]]) -> None:
-        """STEP 5: Update it_def_loc in database with full file paths."""
-        if not updates:
-            self.logger.warning("No updates to apply to database")
-            return
-        
-        successful_updates = [(path, checksum) for checksum, path in updates.items() if path is not None]
-        
-        if not successful_updates:
-            self.logger.warning("No successful file operations to update in database")
-            return
-        
-        try:
-            cursor = self.db_conn.cursor()
-            
-            # Update in batch for efficiency
-            cursor.executemany(
-                "UPDATE import_tuner SET it_def_loc = ? WHERE it_checksum = ?",
-                successful_updates
+            # Run rsync with proper timeout and error handling
+            start_time = time.time()
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=7200  # 2 hour timeout for very large files
             )
             
-            self.db_conn.commit()
-            self.logger.info(f"Updated database it_def_loc for {len(successful_updates)} files")
+            elapsed_time = time.time() - start_time
             
-            # Log failures
-            failed_count = len(updates) - len(successful_updates)
-            if failed_count > 0:
-                self.logger.warning(f"Failed to process {failed_count} files")
+            if result.returncode == 0:
+                file_size = os.path.getsize(destination)
+                speed_mbps = (file_size / (1024 * 1024)) / elapsed_time if elapsed_time > 0 else 0
+                self.logger.info(f"rsync completed: {os.path.basename(source)} ({file_size:,} bytes) in {elapsed_time:.1f}s ({speed_mbps:.1f} MB/s)")
+                return True
+            else:
+                self.logger.warning(f"rsync failed (exit code {result.returncode})")
+                if result.stderr:
+                    self.logger.warning(f"rsync stderr: {result.stderr.strip()}")
                 
-        except sqlite3.Error as e:
-            self.logger.error(f"Database update failed: {e}")
-            self.db_conn.rollback()
-            raise
-
-    def run(self) -> None:
-        """Main execution function following exact step sequence."""
+                # Try fallback method if rsync failed
+                self.logger.info("Attempting fallback copy method")
+                return self.copy_file_fallback(source, destination)
+                
+        except subprocess.TimeoutExpired:
+            self.logger.error(f"rsync timeout after 2 hours for {source}")
+            return False
+        except Exception as e:
+            self.logger.warning(f"rsync error for {source}: {e}")
+            return self.copy_file_fallback(source, destination)
+    
+    def copy_file_fallback(self, source: str, destination: str) -> bool:
+        """Fallback file copy using Python with progress tracking and verification"""
         try:
-            # STEP 1: Load configuration and setup logging
-            self.config = self.load_config()
-            self.setup_logging(self.config['oil_change'].get('logs', False))
+            # Ensure destination directory exists
+            dest_dir = os.path.dirname(destination)
+            os.makedirs(dest_dir, exist_ok=True)
             
-            # STEP 2: Connect to database and get data
-            self.db_conn = self.connect_db()
-            records = self.get_import_tuner_data()
+            file_size = os.path.getsize(source)
+            self.logger.debug(f"Using fallback copy for {os.path.basename(source)} ({file_size:,} bytes)")
+            
+            start_time = time.time()
+            
+            # Use larger chunks for better performance with large files
+            chunk_size = 1024 * 1024  # 1MB chunks
+            copied = 0
+            last_progress = 0
+            
+            with open(source, 'rb') as src, open(destination, 'wb') as dst:
+                while True:
+                    chunk = src.read(chunk_size)
+                    if not chunk:
+                        break
+                    
+                    dst.write(chunk)
+                    copied += len(chunk)
+                    
+                    # Report progress for large files
+                    if file_size > 50 * 1024 * 1024:  # Files > 50MB
+                        progress = (copied / file_size) * 100
+                        if progress - last_progress >= 10:  # Report every 10%
+                            elapsed = time.time() - start_time
+                            speed_mbps = (copied / (1024 * 1024)) / elapsed if elapsed > 0 else 0
+                            self.logger.debug(f"Copy progress: {progress:.0f}% ({speed_mbps:.1f} MB/s)")
+                            last_progress = progress
+            
+            # Copy file attributes (timestamps, permissions)
+            try:
+                shutil.copystat(source, destination)
+            except OSError as e:
+                self.logger.debug(f"Could not copy file attributes: {e}")
+            
+            elapsed_time = time.time() - start_time
+            speed_mbps = (file_size / (1024 * 1024)) / elapsed_time if elapsed_time > 0 else 0
+            self.logger.info(f"Fallback copy completed: {os.path.basename(source)} in {elapsed_time:.1f}s ({speed_mbps:.1f} MB/s)")
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Fallback copy failed for {source}: {e}")
+            # Clean up partial file
+            try:
+                if os.path.exists(destination):
+                    os.remove(destination)
+            except OSError:
+                pass
+            return False
+    
+    def update_database(self, checksum: str, new_location: str) -> bool:
+        """Update it_def_loc in database with proper error handling"""
+        try:
+            with self.get_db_connection() as conn:
+                cursor = conn.cursor()
+                
+                # Use a transaction for safety
+                cursor.execute("BEGIN TRANSACTION")
+                
+                try:
+                    cursor.execute(
+                        "UPDATE import_tuner SET it_def_loc = ? WHERE it_checksum = ?",
+                        (new_location, checksum)
+                    )
+                    
+                    if cursor.rowcount == 0:
+                        self.logger.warning(f"No rows updated for checksum: {checksum}")
+                        cursor.execute("ROLLBACK")
+                        return False
+                    
+                    cursor.execute("COMMIT")
+                    self.logger.debug(f"Database updated: {checksum} -> {new_location}")
+                    return True
+                    
+                except sqlite3.Error as e:
+                    cursor.execute("ROLLBACK")
+                    self.logger.error(f"Database update failed, rolled back: {e}")
+                    return False
+                    
+        except Exception as e:
+            self.logger.error(f"Database update error for {checksum}: {e}")
+            return False
+    
+    def process_file(self, record: Dict, def_loc: str) -> Tuple[bool, str]:
+        """Process a single file record with comprehensive error handling"""
+        checksum = record.get('it_checksum', 'unknown')
+        
+        try:
+            source_path = record['file_location']
+            
+            # Thread-safe check for already processed files
+            with self.processed_lock:
+                if checksum in self.processed_files:
+                    return True, f"Already processed: {checksum}"
+                # Add to processed set immediately to prevent duplicates
+                self.processed_files.add(checksum)
+            
+            # Verify source file exists and is accessible
+            if not os.path.exists(source_path):
+                return False, f"Source file not found: {source_path}"
+            
+            if not os.access(source_path, os.R_OK):
+                return False, f"Source file not readable: {source_path}"
+            
+            # Get file info
+            try:
+                file_size = os.path.getsize(source_path)
+                if file_size == 0:
+                    return False, f"Source file is empty: {source_path}"
+            except OSError as e:
+                return False, f"Cannot access source file: {source_path} - {e}"
+            
+            self.logger.debug(f"Processing: {os.path.basename(source_path)} ({file_size:,} bytes)")
+            
+            # Check disk space before proceeding
+            if not self.check_disk_space(source_path, def_loc):
+                return False, f"Insufficient disk space for: {source_path}"
+            
+            # Verify source file integrity
+            if not self.verify_checksum(source_path, checksum):
+                return False, f"Source checksum verification failed: {source_path}"
+            
+            # Create target directory structure
+            try:
+                target_dir = self.create_folder_structure(record, def_loc)
+            except Exception as e:
+                return False, f"Failed to create folder structure: {e}"
+            
+            # Generate target file path
+            filename = os.path.basename(source_path)
+            target_path = os.path.join(target_dir, filename)
+            
+            # Handle existing target file
+            if os.path.exists(target_path):
+                if self.verify_checksum(target_path, checksum):
+                    # File already exists and is valid
+                    if self.update_database(checksum, target_path):
+                        return True, f"Target already exists and is valid: {os.path.basename(target_path)}"
+                    else:
+                        return False, f"Database update failed for existing file: {checksum}"
+                else:
+                    # Remove corrupted existing file
+                    self.logger.warning(f"Removing corrupted existing file: {target_path}")
+                    try:
+                        os.remove(target_path)
+                    except OSError as e:
+                        return False, f"Cannot remove corrupted file: {target_path} - {e}"
+            
+            # Copy the file
+            self.logger.info(f"Copying: {os.path.basename(source_path)} -> {os.path.basename(target_dir)}")
+            
+            copy_success = self.copy_file_rsync(source_path, target_path)
+            
+            if not copy_success:
+                return False, f"Copy operation failed: {source_path}"
+            
+            # Verify copied file integrity
+            if not self.verify_checksum(target_path, checksum):
+                self.logger.error(f"Target file corrupted after copy, removing: {target_path}")
+                try:
+                    os.remove(target_path)
+                except OSError:
+                    pass
+                return False, f"Target file verification failed: {target_path}"
+            
+            # Update database
+            if not self.update_database(checksum, target_path):
+                return False, f"Database update failed: {checksum}"
+            
+            return True, f"Successfully processed: {os.path.basename(source_path)}"
+            
+        except Exception as e:
+            # Remove from processed set if we failed
+            with self.processed_lock:
+                self.processed_files.discard(checksum)
+            
+            self.logger.error(f"Unexpected error processing {checksum}: {e}")
+            return False, f"Processing failed with error: {e}"
+    
+    def run(self) -> None:
+        """Main execution function with comprehensive error handling"""
+        start_time = time.time()
+        
+        try:
+            self.logger.info("=== Starting oil_change process ===")
+            
+            # Step 1: Load configuration
+            self.logger.info("Step 1: Loading configuration...")
+            config = self.load_config()
+            
+            # Setup logging based on config
+            log_enabled = config.get('oil_change', {}).get('logs', False)
+            self.setup_logging(log_enabled)
+            
+            self.logger.info(f"Logging enabled: {log_enabled}")
+            
+            # Get and validate def_loc
+            def_loc = config['user_input']['default']['def_loc']
+            self.logger.info(f"Target location: {def_loc}")
+            
+            # Ensure def_loc exists and is writable
+            if not os.path.exists(def_loc):
+                self.logger.info(f"Creating target directory: {def_loc}")
+                try:
+                    os.makedirs(def_loc, exist_ok=True)
+                except OSError as e:
+                    self.logger.error(f"Failed to create target directory: {e}")
+                    sys.exit(1)
+            
+            if not os.access(def_loc, os.W_OK):
+                self.logger.error(f"Target directory is not writable: {def_loc}")
+                sys.exit(1)
+            
+            # Check available disk space
+            try:
+                disk_usage = shutil.disk_usage(def_loc)
+                available_gb = disk_usage.free / (1024**3)
+                self.logger.info(f"Available disk space: {available_gb:.1f} GB")
+                
+                if available_gb < 1.0:  # Less than 1GB available
+                    self.logger.warning("Low disk space available!")
+            except Exception as e:
+                self.logger.warning(f"Could not check disk space: {e}")
+            
+            # Step 2: Get import data from database
+            self.logger.info("Step 2: Loading import data from database...")
+            records = self.get_import_data()
             
             if not records:
-                self.logger.info("No valid records found in import_tuner table")
+                self.logger.info("No records found to process")
                 return
             
-            # Get def_loc from config
-            def_loc = self.config['user_input']['default']['def_loc']
+            self.logger.info(f"Found {len(records)} records to process")
             
-            # STEP 3: Clean folders - get unique source folders and destination folder
-            folders_to_clean = set()
-            
-            # Add source folders
+            # Analyze torrent types
+            torrent_types = {}
             for record in records:
-                source_folder = str(Path(record['file_location']).parent)
-                folders_to_clean.add(source_folder)
+                t_type = record.get('it_torrent', 'unknown')
+                torrent_types[t_type] = torrent_types.get(t_type, 0) + 1
             
-            # Add destination folder
-            folders_to_clean.add(def_loc)
+            self.logger.info("Torrent type distribution:")
+            for t_type, count in torrent_types.items():
+                self.logger.info(f"  {t_type}: {count} files")
             
-            self.clean_folders(folders_to_clean)
+            # Step 3-4: Process files with optimized threading
+            self.logger.info("Step 3-4: Processing files...")
             
-            # STEP 4: Create folder structure based on torrent preferences
-            folder_map = self.create_folder_structure(records, def_loc)
+            # Determine optimal number of workers
+            # For file I/O operations, too many threads can hurt performance
+            cpu_count = os.cpu_count() or 1
+            max_workers = min(cpu_count, 3)  # Conservative limit for file operations
             
-            if not folder_map:
-                self.logger.error("No valid folder mappings created")
-                return
+            self.logger.info(f"Using {max_workers} worker threads")
             
-            # STEP 5: Process files with optimal concurrency
-            max_workers = min(max(1, os.cpu_count() // 2), len(records), 8)  # Conservative threading
-            updates = {}
+            successful = 0
+            failed = 0
+            total_bytes_processed = 0
             
-            self.logger.info(f"Processing {len(records)} files with {max_workers} workers")
-            
-            with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                future_to_checksum = {
-                    executor.submit(self.process_file, record, folder_map): record['it_checksum']
-                    for record in records if record['it_checksum'] in folder_map
+            # Process files with thread pool
+            with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="FileProcessor") as executor:
+                # Submit all tasks
+                future_to_record = {
+                    executor.submit(self.process_file, record, def_loc): record 
+                    for record in records
                 }
                 
-                for future in as_completed(future_to_checksum):
-                    try:
-                        checksum, new_location = future.result()
-                        updates[checksum] = new_location
-                    except Exception as e:
-                        checksum = future_to_checksum[future]
-                        self.logger.error(f"Processing failed for {checksum}: {e}")
-                        updates[checksum] = None
-            
-            # Update database with new it_def_loc values
-            self.update_database(updates)
-            
-            # Final report
-            success_count = sum(1 for loc in updates.values() if loc is not None)
-            total_count = len(records)
-            self.logger.info(f"oil_change complete: {success_count}/{total_count} files processed successfully")
-            
-            if success_count < total_count:
-                self.logger.warning(f"{total_count - success_count} files failed processing")
+                self.logger.info(f"Submitted {len(future_to_record)} processing tasks")
                 
+                # Process completed tasks
+                for i, future in enumerate(as_completed(future_to_record), 1):
+                    record = future_to_record[future]
+                    checksum = record.get('it_checksum', 'unknown')
+                    
+                    try:
+                        success, message = future.result()
+                        
+                        if success:
+                            successful += 1
+                            # Try to get file size for statistics
+                            try:
+                                file_path = record.get('file_location', '')
+                                if file_path and os.path.exists(file_path):
+                                    total_bytes_processed += os.path.getsize(file_path)
+                            except:
+                                pass  # Don't fail on statistics
+                            
+                            self.logger.info(f"✓ [{i}/{len(records)}] {message}")
+                        else:
+                            failed += 1
+                            self.logger.error(f"✗ [{i}/{len(records)}] {message}")
+                            
+                    except Exception as e:
+                        failed += 1
+                        self.logger.error(f"✗ [{i}/{len(records)}] Unexpected error for {checksum}: {e}")
+                
+                # Wait for all tasks to complete
+                self.logger.debug("Waiting for all tasks to complete...")
+            
+            # Final summary
+            elapsed_time = time.time() - start_time
+            total_gb_processed = total_bytes_processed / (1024**3)
+            
+            self.logger.info("=== Process completed ===")
+            self.logger.info(f"Total time: {elapsed_time:.1f} seconds ({elapsed_time/60:.1f} minutes)")
+            self.logger.info(f"Results: {successful} successful, {failed} failed")
+            self.logger.info(f"Data processed: {total_gb_processed:.2f} GB")
+            
+            if total_bytes_processed > 0 and elapsed_time > 0:
+                avg_speed_mbps = (total_bytes_processed / (1024*1024)) / elapsed_time
+                self.logger.info(f"Average speed: {avg_speed_mbps:.1f} MB/s")
+            
+            # Report any issues
+            if failed > 0:
+                self.logger.warning(f"{failed} files failed to process")
+                if log_enabled:
+                    self.logger.warning("Check log file for detailed error information")
+                else:
+                    self.logger.warning("Enable logging in config for detailed error information")
+            
+            # Success/failure exit codes
+            if failed > 0:
+                sys.exit(1)  # Partial failure
+            else:
+                self.logger.info("All files processed successfully!")
+                sys.exit(0)  # Complete success
+                
+        except KeyboardInterrupt:
+            self.logger.info("Process interrupted by user (Ctrl+C)")
+            sys.exit(130)  # Standard exit code for SIGINT
+            
         except Exception as e:
-            self.logger.error(f"FATAL: Unexpected error during execution: {e}")
+            self.logger.error(f"Fatal error in main process: {e}")
+            if hasattr(self, 'logger') and self.config and self.config.get('oil_change', {}).get('logs', False):
+                import traceback
+                self.logger.error("Full traceback:")
+                self.logger.error(traceback.format_exc())
             raise
-        finally:
-            if self.db_conn:
-                self.db_conn.close()
-                self.logger.debug("Database connection closed")
 
+def main():
+    """Entry point with comprehensive error handling"""
+    organizer = None
+    
+    try:
+        # Create organizer instance
+        organizer = MediaOrganizer()
+        
+        # Validate required files exist before starting
+        required_files = ['2jznoshit.json', 'danger2manifold.db']
+        missing_files = [f for f in required_files if not os.path.exists(f)]
+        
+        if missing_files:
+            print(f"ERROR: Required files missing: {', '.join(missing_files)}")
+            print("Please ensure these files are in the current directory:")
+            print("  - 2jznoshit.json (configuration file)")
+            print("  - danger2manifold.db (database file)")
+            sys.exit(1)
+        
+        # Run the main process
+        organizer.run()
+        
+    except KeyboardInterrupt:
+        if organizer and hasattr(organizer, 'logger'):
+            organizer.logger.info("Process interrupted by user")
+        else:
+            print("\nProcess interrupted by user")
+        sys.exit(130)
+        
+    except SystemExit:
+        # Re-raise SystemExit to preserve exit codes
+        raise
+        
+    except Exception as e:
+        if organizer and hasattr(organizer, 'logger'):
+            organizer.logger.error(f"Fatal error: {e}")
+        else:
+            print(f"FATAL ERROR: {e}")
+        sys.exit(1)
 
 if __name__ == "__main__":
-    try:
-        organizer = MediaOrganizer()
-        organizer.run()
-    except KeyboardInterrupt:
-        print("\nOperation cancelled by user")
-        sys.exit(130)
-    except Exception as e:
-        print(f"FATAL ERROR: {e}")
-        sys.exit(1)
+    main()

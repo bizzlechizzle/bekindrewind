@@ -34,11 +34,12 @@ def setup_logging():
 
 def execute_script(script_name, args=None):
     """Execute a Python script and return exit code."""
-    if not Path(script_name).exists():
+    script_path = Path(script_name)
+    if not script_path.exists():
         logging.error(f"Script not found: {script_name}")
         return 1
     
-    cmd = [sys.executable, script_name]
+    cmd = [sys.executable, str(script_path)]
     if args:
         cmd.extend(args)
     
@@ -78,7 +79,10 @@ def main():
         'hector.py',
         'any_flavor.py',
         'doms_charger.py',
-        'fast_five.py'
+        'fast_five.py',
+        'galo12.py',
+        'oil_change.py',
+        'fast_six.py'
     ]
     
     args = sys.argv[1:] if len(sys.argv) > 1 else None

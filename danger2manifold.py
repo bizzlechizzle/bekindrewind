@@ -234,6 +234,7 @@ def create_database():
                 qm_ser_desc TEXT,
                 qm_sea_desc TEXT,
                 qm_ep_desc TEXT,
+                qm_ep_tit,
                 qm_sea_yr TEXT,
                 qm_air TEXT,
                 qm_res TEXT,
