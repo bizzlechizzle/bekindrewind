@@ -59,9 +59,12 @@
     "logs": false
   },
   "oil_change": {
-    "logs": true
+    "logs": false
   },
   "fast_six": {
+    "logs": false
+  },
+  "fast_sev": {
     "logs": true
   },
   "release_group": {
@@ -87,12 +90,12 @@
     "amazon": {
       "it_src": "amazon",
       "it_src_link": "amazon.com",
-      "it_src_short": "amzn"
+      "it_src_short": "AMZN.WEB-DL"
     },
     "hbo": {
       "it_src": "hbo",
       "it_src_link": "max.com",
-      "it_src_short": "hbo"
+      "it_src_short": "HBO.WEB-DL"
     }
   }
 }

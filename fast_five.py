@@ -218,6 +218,13 @@ def get_majority_answer(*values):
     counter = Counter(valid)
     return counter.most_common(1)[0][0]
 
+def get_prioritized_network(*networks):
+    """Get network with priority: TMDB > TVDb > IMDb > TV Maze"""
+    for network in networks:
+        if network and str(network).strip():
+            return str(network).strip()
+    return None
+
 def combine_genres(*genre_lists):
     """Combine genres from multiple sources"""
     all_genres = []
@@ -349,7 +356,7 @@ def process_row(row, config, release_group, user_input):
         'qm_lan': normalize_language(ff_language or mi_language),
         'qm_sub': normalize_subtitles(ff_subtitles, mi_subtitles, it_subtitles),
         'qm_size': normalize_file_size(ff_size or mi_size),
-        'qm_net': get_majority_answer(tmdb_studio, tvdb_studio, imdb_studio, tvm_studio),
+        'qm_net': get_prioritized_network(tmdb_studio, tvdb_studio, imdb_studio, tvm_studio),
         'qm_genre': combine_genres(tmdb_genre, tvdb_genre, imdb_genre, tvm_genre, pw_genre),
         'qm_rat': pw_nw_rat or get_majority_answer(tmdb_nw_rat, imdb_nw_rat, tvm_nw_rat),
         'qm_cast': get_majority_answer(tmdb_cast, imdb_cast, tvm_cast),
