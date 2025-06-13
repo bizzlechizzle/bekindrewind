@@ -41,7 +41,7 @@ def normalize_season_episode(value, prefix):
     match = re.search(r'(\d+)', str(value))
     if match:
         num = int(match.group(1))
-        return f"{prefix} {num:02d}" if prefix == "Season" else f"Episode episode {num}"
+        return f"{prefix} {num:02d}"
     return value
 
 def normalize_airdate(date_str):

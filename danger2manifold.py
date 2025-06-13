@@ -47,7 +47,8 @@ def create_database():
                 it_src_link TEXT,
                 it_torrent TEXT,
                 it_ep_avl INTEGER DEFAULT 0,
-                it_def_loc TEXT
+                it_def_loc TEXT,
+                it_file_loc TEXT
             );
             
             CREATE TABLE ford_probe (

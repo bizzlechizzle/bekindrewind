@@ -65,7 +65,7 @@
     "logs": false
   },
   "fast_sev": {
-    "logs": true
+    "logs": false
   },
   "release_group": {
     "full": "[pleaserewind]",
