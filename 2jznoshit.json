@@ -67,6 +67,9 @@
   "fast_sev": {
     "logs": false
   },
+  "spoon_engine": {
+    "logs": true
+  },
   "release_group": {
     "full": "[pleaserewind]",
     "short": "PLZRWD"
@@ -83,7 +86,8 @@
       "it_src_short": "AMZN.WEB-DL",
       "it_torrent": "season",
       "timeout": "5 seconds",
-      "def_loc": "/Volumes/barbossa/upload/tor"
+      "def_loc": "/Volumes/barbossa/upload/tor",
+      "scn_loc": "/Volumes/barbossa/upload/scn"
     }
   },
   "library": {
