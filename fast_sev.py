@@ -6,8 +6,7 @@ import logging
 import os
 import re
 from pathlib import Path
-from concurrent.futures import ThreadPoolExecutor, as_completed
-import threading
+from collections import defaultdict
 
 def setup_logging():
     try:
@@ -21,104 +20,91 @@ def setup_logging():
         logging.basicConfig(
             filename='fast_sev.log',
             level=logging.DEBUG,
-            format='%(asctime)s - %(threadName)s - %(levelname)s - %(message)s',
+            format='%(asctime)s - %(levelname)s - %(message)s',
             filemode='a'
         )
-        logging.info("Logging enabled for fast_sev")
     else:
         logging.disable(logging.CRITICAL)
 
 def normalize_series_name(series_name):
-    """Normalize series name for torrent compatibility - remove problematic punctuation"""
-    if not series_name:
+    if not series_name or not series_name.strip():
         return ""
     
-    # Remove apostrophes, quotes, question marks entirely
-    normalized = re.sub(r"['\"`?!]", "", series_name)
-    
-    # Replace other punctuation with dots
+    normalized = series_name.strip()
+    normalized = re.sub(r"['\"`?!]", "", normalized)
     normalized = re.sub(r"[^\w\s\-]", ".", normalized)
-    
-    # Replace spaces with dots
     normalized = re.sub(r"\s+", ".", normalized)
-    
-    # Clean up multiple dots
     normalized = re.sub(r"\.+", ".", normalized)
-    
-    # Remove leading/trailing dots
     normalized = normalized.strip(".")
     
     return normalized
 
-def normalize_season_episode(sea_no, ep_no):
-    """Convert season/episode to S##E## format"""
-    # Extract numbers from season and episode strings
-    season_match = re.search(r'(\d+)', str(sea_no))
-    episode_match = re.search(r'(\d+)', str(ep_no))
-    
-    if season_match and episode_match:
-        s_num = int(season_match.group(1))
-        e_num = int(episode_match.group(1))
-        return f"S{s_num:02d}E{e_num:02d}"
-    return None
-
 def build_filename(qm_data, name_type):
-    """Build filename based on naming conventions"""
     series = normalize_series_name(qm_data['qm_series'])
-    sea_no = qm_data['qm_sea_no']
-    ep_no = qm_data['qm_ep_no'] 
+    if not series:
+        return None
+        
+    sea_no = str(qm_data['qm_sea_no'])
+    ep_no = str(qm_data['qm_ep_no'])
     res = qm_data['qm_res']
     hdr = qm_data['qm_hdr']
-    vid_bac = qm_data['qm_vid_bac']
+    vid_bac = qm_data['qm_vid_bac'] 
     aud_cdc = qm_data['qm_aud_cdc']
     aud_chn = qm_data['qm_aud_chn']
     src_short = qm_data['qm_src_short']
     rga = qm_data['qm_rga']
     
-    # Handle HDR - only include if HDR, skip if SDR
-    hdr_part = ""
-    if hdr and 'HDR' in hdr.upper():
-        hdr_part = ".HDR"
+    if not all([res, vid_bac, aud_cdc, src_short, rga]):
+        return None
     
-    # Handle audio channels - only include 5.1 or 7.1
-    aud_chn_part = ""
-    if aud_chn and ('5.1' in aud_chn or '7.1' in aud_chn):
-        aud_chn_part = f".{aud_chn}"
+    # HDR part - only if HDR present
+    hdr_part = ".HDR" if hdr and 'HDR' in hdr.upper() else ""
+    
+    # Audio channel part - only for 5.1 or 7.1
+    aud_chn_part = f".{aud_chn}" if aud_chn and ('5.1' in aud_chn or '7.1' in aud_chn) else ""
     
     if name_type == 'series':
-        # Check for multiple seasons
-        season_nums = re.findall(r'(\d+)', sea_no)
+        # Extract all season numbers for range
+        season_nums = [int(x) for x in re.findall(r'(\d+)', sea_no)]
         if len(season_nums) > 1:
-            sea_part = f"S{season_nums[0]:0>2}-S{season_nums[-1]:0>2}"
+            sea_part = f"S{min(season_nums):02d}-S{max(season_nums):02d}"
         else:
-            sea_part = f"S{season_nums[0]:0>2}" if season_nums else "S01"
+            sea_part = f"S{season_nums[0]:02d}" if season_nums else "S01"
         
         return f"{series}.{sea_part}.{res}{hdr_part}.{src_short}.{vid_bac}.{aud_cdc}{aud_chn_part}-{rga}"
     
     elif name_type == 'season':
-        season_num = re.search(r'(\d+)', sea_no)
-        sea_part = f"S{season_num.group(1):0>2}" if season_num else "S01"
+        season_nums = [int(x) for x in re.findall(r'(\d+)', sea_no)]
+        sea_part = f"S{season_nums[0]:02d}" if season_nums else "S01"
         
         return f"{series}.{sea_part}.{res}{hdr_part}.{src_short}.{vid_bac}.{aud_cdc}{aud_chn_part}-{rga}"
     
     elif name_type == 'episode':
-        se_format = normalize_season_episode(sea_no, ep_no)
-        if not se_format:
-            return None
+        # Build S##E## format
+        season_nums = [int(x) for x in re.findall(r'(\d+)', sea_no)]
+        episode_nums = [int(x) for x in re.findall(r'(\d+)', ep_no)]
         
-        return f"{series}.{se_format}.{res}{hdr_part}.{src_short}.{vid_bac}.{aud_cdc}{aud_chn_part}-{rga}"
+        if not season_nums or not episode_nums:
+            return None
+            
+        se_part = f"S{season_nums[0]:02d}E{episode_nums[0]:02d}"
+        
+        return f"{series}.{se_part}.{res}{hdr_part}.{src_short}.{vid_bac}.{aud_cdc}{aud_chn_part}-{rga}"
     
     return None
 
 def safe_rename(old_path, new_path):
-    """Safely rename file/folder with conflict handling"""
     old_path = Path(old_path)
     new_path = Path(new_path)
     
     if not old_path.exists():
-        logging.error(f"Source path does not exist: {old_path}")
-        return False
+        logging.error(f"Source does not exist: {old_path}")
+        return None
     
+    if old_path.resolve() == new_path.resolve():
+        return old_path
+    
+    # Handle conflicts
     if new_path.exists():
         counter = 1
         stem = new_path.stem
@@ -126,237 +112,291 @@ def safe_rename(old_path, new_path):
         parent = new_path.parent
         
         while new_path.exists():
-            if suffix:
-                new_name = f"{stem}_{counter}{suffix}"
-            else:
-                new_name = f"{stem}_{counter}"
+            new_name = f"{stem}_{counter}{suffix}" if suffix else f"{stem}_{counter}"
             new_path = parent / new_name
             counter += 1
-        
-        logging.warning(f"Target exists, using: {new_path}")
+    
+    # Safety check - only rename within tor directory
+    tor_base = Path("/Volumes/barbossa/upload/tor")
+    try:
+        if not old_path.is_relative_to(tor_base) or not new_path.is_relative_to(tor_base):
+            logging.error(f"SAFETY: Refusing rename outside tor directory")
+            return None
+            
+        old_path.rename(new_path)
+        logging.info(f"Renamed: {old_path.name} -> {new_path.name}")
+        return new_path
+    except Exception as e:
+        logging.error(f"Rename failed: {e}")
+        return None
+
+def get_torrent_structure(file_path):
+    """Determine torrent structure type"""
+    tor_base = Path("/Volumes/barbossa/upload/tor")
+    file_path = Path(file_path)
     
     try:
-        old_path.rename(new_path)
-        logging.info(f"Renamed: {old_path} -> {new_path}")
-        return str(new_path)
-    except Exception as e:
-        logging.error(f"Rename failed: {old_path} -> {new_path}: {e}")
-        return False
+        relative_path = file_path.relative_to(tor_base)
+        depth = len(relative_path.parts)
+        
+        if depth >= 3:  # series/season/file
+            return 'series'
+        elif depth == 2:  # season/file or episode/file  
+            parent_name = relative_path.parts[0]
+            if re.search(r'season|s\d+', parent_name, re.I):
+                return 'season'
+            else:
+                return 'episode'
+        else:
+            return 'unknown'
+    except ValueError:
+        return 'unknown'
 
-def process_files(checksum, import_data, qm_data):
-    """Process renaming for a single checksum"""
-    logging.debug(f"Processing checksum: {checksum}")
+def find_and_rename_nfos(directory, qm_data, structure_type):
+    """Find and rename all NFO files in directory based on structure"""
+    series_name = build_filename(qm_data, 'series')
+    season_name = build_filename(qm_data, 'season')
+    episode_name = build_filename(qm_data, 'episode')
     
-    current_location = Path(import_data['it_def_loc'])
-    torrent_type = import_data['it_torrent']
-    has_subtitles = bool(import_data.get('it_subtitles'))
+    # Find all NFO files in directory
+    nfo_files = list(directory.glob("*.nfo"))
     
-    # If exact path doesn't exist, try to find similar folder structure
-    if not current_location.exists():
-        parent_dir = current_location.parent
-        filename = current_location.name
+    for nfo_file in nfo_files:
+        current_name = nfo_file.name.lower()
         
-        # Look for folders with similar names in parent directory
-        if parent_dir.exists():
-            for folder in parent_dir.iterdir():
-                if folder.is_dir():
-                    potential_file = folder / filename
-                    if potential_file.exists():
-                        current_location = potential_file
-                        logging.info(f"Found file at: {current_location}")
-                        break
-        
-        # If still not found, search more broadly
-        if not current_location.exists():
-            base_path = Path("/Volumes/barbossa/upload/tor")
-            if base_path.exists():
-                for item in base_path.rglob(filename):
-                    if item.is_file():
-                        current_location = item
-                        logging.info(f"Found file via search: {current_location}")
-                        break
+        # Check if it's a generic NFO name first
+        if current_name == 'series.nfo' and series_name:
+            new_nfo_path = directory / f"{series_name}.nfo"
+            safe_rename(nfo_file, new_nfo_path)
+        elif current_name == 'season.nfo' and season_name:
+            new_nfo_path = directory / f"{season_name}.nfo"
+            safe_rename(nfo_file, new_nfo_path)
+        else:
+            # For structure types, determine appropriate NFO naming
+            if structure_type == 'season':
+                # Season torrents should have season NFOs
+                if season_name:
+                    new_nfo_path = directory / f"{season_name}.nfo"
+                    safe_rename(nfo_file, new_nfo_path)
+            elif structure_type == 'episode':
+                # Episode torrents should have episode NFOs
+                if episode_name:
+                    new_nfo_path = directory / f"{episode_name}.nfo"
+                    safe_rename(nfo_file, new_nfo_path)
+            elif structure_type == 'series':
+                # Series torrents can have both - check content or use episode as fallback
+                if episode_name:
+                    new_nfo_path = directory / f"{episode_name}.nfo"
+                    safe_rename(nfo_file, new_nfo_path)
+
+def process_single_file(file_data, structure_type, cursor):
+    """Process single video file and related files"""
+    checksum = file_data['it_checksum']
+    current_file = Path(file_data['it_def_loc'])
     
-    if not current_location.exists():
-        logging.error(f"File not found after search: {current_location}")
-        return None
-    
-    # Determine naming type based on torrent structure
-    if torrent_type == 'all' or torrent_type == 'series':
-        name_type = 'episode'  # Individual files get episode naming
-    elif torrent_type == 'season':
-        name_type = 'episode'
-    else:  # per episode
-        name_type = 'episode'
+    if not current_file.exists():
+        logging.error(f"File not found: {current_file}")
+        return False, None
     
     # Build new filename
-    new_filename = build_filename(qm_data, name_type)
+    qm_data = {
+        'qm_series': file_data['qm_series'],
+        'qm_sea_no': file_data['qm_sea_no'],
+        'qm_ep_no': file_data['qm_ep_no'],
+        'qm_res': file_data['qm_res'],
+        'qm_hdr': file_data['qm_hdr'],
+        'qm_vid_bac': file_data['qm_vid_bac'],
+        'qm_aud_cdc': file_data['qm_aud_cdc'],
+        'qm_aud_chn': file_data['qm_aud_chn'],
+        'qm_src_short': file_data['qm_src_short'],
+        'qm_rga': file_data['qm_rga']
+    }
+    
+    new_filename = build_filename(qm_data, 'episode')
     if not new_filename:
         logging.error(f"Could not build filename for {checksum}")
-        return None
-    
-    # Get file extension and build full new path
-    file_ext = current_location.suffix
-    new_file_path = current_location.parent / f"{new_filename}{file_ext}"
+        return False, None
     
     # Rename video file
-    renamed_video = safe_rename(current_location, new_file_path)
+    file_ext = current_file.suffix
+    new_video_path = current_file.parent / f"{new_filename}{file_ext}"
+    renamed_video = safe_rename(current_file, new_video_path)
+    
     if not renamed_video:
-        return None
+        return False, None
     
-    new_location = renamed_video
+    # Rename subtitle files if available
+    if file_data['it_subtitles']:
+        video_stem = current_file.stem
+        subtitle_exts = ['.srt', '.sub', '.idx', '.vtt', '.ass', '.ssa']
+        for ext in subtitle_exts:
+            sub_file = current_file.parent / f"{video_stem}{ext}"
+            if sub_file.exists():
+                new_sub_path = current_file.parent / f"{new_filename}{ext}"
+                safe_rename(sub_file, new_sub_path)
     
-    # Handle .nfo file - search for any .nfo in the same directory
-    current_folder = current_location.parent
-    for nfo_file in current_folder.glob("*.nfo"):
-        if nfo_file.exists():
-            new_nfo_name = build_filename(qm_data, 'season' if torrent_type == 'season' else 'series')
-            if new_nfo_name:
-                new_nfo_path = current_folder / f"{new_nfo_name}.nfo"
-                safe_rename(nfo_file, new_nfo_path)
-    
-    # Handle subtitle files
-    if has_subtitles:
-        subtitle_extensions = ['.srt', '.sub', '.idx', '.vtt', '.ass']
-        for ext in subtitle_extensions:
-            sub_path = current_location.with_suffix(ext)
-            if sub_path.exists():
-                new_sub_path = Path(renamed_video).with_suffix(ext)
-                safe_rename(sub_path, new_sub_path)
-    
-    # Handle folder renaming based on torrent type
-    current_folder = current_location.parent
-    
-    if torrent_type == 'all' or torrent_type == 'series':
-        # Rename season folder
+    return True, (qm_data, renamed_video.parent, renamed_video, checksum)
+
+def rename_directories(qm_data, directory, structure_type):
+    """Rename directories based on structure type"""
+    if structure_type == 'series':
+        # Rename season folder first
         season_name = build_filename(qm_data, 'season')
         if season_name:
-            new_season_folder = current_folder.parent / season_name
-            if current_folder.name != season_name:
-                renamed_season = safe_rename(current_folder, new_season_folder)
-                if renamed_season:
-                    current_folder = Path(renamed_season)
-                    new_location = current_folder / Path(renamed_video).name
-        
-        # Rename series folder (parent of season)
-        series_folder = current_folder.parent
-        series_name = build_filename(qm_data, 'series')
-        if series_name:
-            new_series_folder = series_folder.parent / series_name
-            if series_folder.name != series_name:
-                renamed_series = safe_rename(series_folder, new_series_folder)
-                if renamed_series:
-                    new_location = Path(renamed_series) / current_folder.name / Path(renamed_video).name
-    
-    elif torrent_type == 'season':
-        # Rename season folder
-        season_name = build_filename(qm_data, 'season')
-        if season_name and current_folder.name != season_name:
-            new_season_folder = current_folder.parent / season_name
-            renamed_season = safe_rename(current_folder, new_season_folder)
+            new_season_path = directory.parent / season_name
+            renamed_season = safe_rename(directory, new_season_path)
+            
             if renamed_season:
-                new_location = Path(renamed_season) / Path(renamed_video).name
+                # Rename series folder
+                series_name = build_filename(qm_data, 'series')
+                if series_name:
+                    new_series_path = renamed_season.parent.parent / series_name
+                    return safe_rename(renamed_season.parent, new_series_path)
+                return renamed_season.parent
+            return directory
     
-    else:  # per episode
-        # Rename episode folder
+    elif structure_type == 'season':
+        season_name = build_filename(qm_data, 'season')
+        if season_name:
+            new_season_path = directory.parent / season_name
+            return safe_rename(directory, new_season_path)
+        return directory
+    
+    elif structure_type == 'episode':
         episode_name = build_filename(qm_data, 'episode')
-        if episode_name and current_folder.name != episode_name:
-            new_episode_folder = current_folder.parent / episode_name
-            renamed_episode = safe_rename(current_folder, new_episode_folder)
-            if renamed_episode:
-                new_location = Path(renamed_episode) / Path(renamed_video).name
+        if episode_name:
+            new_episode_path = directory.parent / episode_name
+            return safe_rename(directory, new_episode_path)
+        return directory
     
-    logging.info(f"Completed processing: {checksum} -> {new_location}")
-    return str(new_location)
+    return directory
 
-def update_database(cursor, checksum, new_location):
-    """Update it_file_loc in database"""
-    try:
-        cursor.execute(
-            "UPDATE import_tuner SET it_file_loc = ? WHERE it_checksum = ?",
-            (new_location, checksum)
-        )
-        logging.debug(f"Updated database for {checksum}: {new_location}")
-    except Exception as e:
-        logging.error(f"Database update failed for {checksum}: {e}")
+def process_files(torrent_files, cursor):
+    """Process and rename files"""
+    if not torrent_files:
+        return 0, 0
+    
+    successful = 0
+    failed = 0
+    
+    # Group by directory for efficient processing
+    dir_groups = defaultdict(list)
+    for file_data in torrent_files:
+        file_path = Path(file_data['it_def_loc'])
+        dir_groups[file_path.parent].append(file_data)
+    
+    processed_dirs = {}
+    db_updates = []
+    
+    for directory, files in dir_groups.items():
+        structure_type = get_torrent_structure(files[0]['it_def_loc'])
+        
+        if structure_type == 'unknown':
+            failed += len(files)
+            continue
+        
+        # Process each file in directory
+        qm_data = None
+        for file_data in files:
+            success, result = process_single_file(file_data, structure_type, cursor)
+            if success:
+                successful += 1
+                qm_data, current_dir, renamed_video, checksum = result
+                db_updates.append((renamed_video, checksum))
+            else:
+                failed += 1
+        
+        # Rename NFOs after all video files are processed
+        if qm_data:
+            find_and_rename_nfos(directory, qm_data, structure_type)
+            processed_dirs[directory] = (qm_data, structure_type)
+    
+    # Rename directories last (deepest first)
+    sorted_dirs = sorted(processed_dirs.items(), key=lambda x: len(x[0].parts), reverse=True)
+    final_updates = []
+    
+    for directory, (qm_data, structure_type) in sorted_dirs:
+        if directory.exists():
+            old_dir = directory
+            new_dir = rename_directories(qm_data, directory, structure_type)
+            
+            # Update paths for files that were in renamed directories
+            if new_dir and new_dir != old_dir:
+                for i, (video_path, checksum) in enumerate(db_updates):
+                    if old_dir in video_path.parents or video_path.parent == old_dir:
+                        # Calculate new path after directory rename
+                        relative_path = video_path.relative_to(old_dir)
+                        new_video_path = new_dir / relative_path
+                        db_updates[i] = (new_video_path, checksum)
+    
+    # Update database with final paths
+    for video_path, checksum in db_updates:
+        try:
+            cursor.execute(
+                "UPDATE import_tuner SET it_file_loc = ? WHERE it_checksum = ?",
+                (str(video_path), checksum)
+            )
+        except Exception as e:
+            logging.error(f"Database update failed for {checksum}: {e}")
+    
+    return successful, failed
 
 def main():
     setup_logging()
-    logging.info("Starting fast_sev rename process")
+    logging.info("Starting fast_sev")
     
     try:
-        # Connect to database
         conn = sqlite3.connect('danger2manifold.db')
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
-        # Get matching checksums between tables
         query = """
         SELECT it.it_checksum, it.it_def_loc, it.it_torrent, it.it_subtitles,
                qm.qm_series, qm.qm_sea_no, qm.qm_ep_no, qm.qm_res, qm.qm_hdr,
                qm.qm_vid_bac, qm.qm_aud_cdc, qm.qm_aud_chn, qm.qm_src_short, qm.qm_rga
         FROM import_tuner it
         JOIN qtr_mile qm ON it.it_checksum = qm.it_checksum
-        WHERE it.it_def_loc IS NOT NULL
+        WHERE it.it_def_loc IS NOT NULL AND it.it_def_loc != ''
+        ORDER BY it.it_torrent, qm.qm_series, qm.qm_sea_no, qm.qm_ep_no
         """
         
         cursor.execute(query)
         rows = cursor.fetchall()
         
         if not rows:
-            logging.warning("No matching records found")
+            print("No files to process")
             return
         
-        logging.info(f"Found {len(rows)} files to process")
+        print(f"Processing {len(rows)} files")
         
-        # Process files with threading for performance
-        max_workers = min(16, len(rows))
+        # Convert to list of dicts
+        files = [dict(row) for row in rows]
         
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            # Submit all tasks
-            future_to_checksum = {}
-            for row in rows:
-                import_data = {
-                    'it_def_loc': row['it_def_loc'],
-                    'it_torrent': row['it_torrent'],
-                    'it_subtitles': row['it_subtitles']
-                }
-                qm_data = {
-                    'qm_series': row['qm_series'],
-                    'qm_sea_no': row['qm_sea_no'],
-                    'qm_ep_no': row['qm_ep_no'],
-                    'qm_res': row['qm_res'],
-                    'qm_hdr': row['qm_hdr'],
-                    'qm_vid_bac': row['qm_vid_bac'],
-                    'qm_aud_cdc': row['qm_aud_cdc'],
-                    'qm_aud_chn': row['qm_aud_chn'],
-                    'qm_src_short': row['qm_src_short'],
-                    'qm_rga': row['qm_rga']
-                }
-                
-                future = executor.submit(process_files, row['it_checksum'], import_data, qm_data)
-                future_to_checksum[future] = row['it_checksum']
-            
-            # Process completed tasks
-            for future in as_completed(future_to_checksum):
-                checksum = future_to_checksum[future]
-                try:
-                    new_location = future.result()
-                    if new_location:
-                        update_database(cursor, checksum, new_location)
-                except Exception as e:
-                    logging.error(f"Task failed for {checksum}: {e}")
+        # Group by torrent type
+        torrent_groups = defaultdict(list)
+        for file_data in files:
+            key = (file_data['it_torrent'], file_data['qm_series'])
+            torrent_groups[key].append(file_data)
         
-        # Commit all database changes
+        total_successful = 0
+        total_failed = 0
+        
+        for (torrent_type, series), torrent_files in torrent_groups.items():
+            print(f"Processing {series} ({torrent_type}): {len(torrent_files)} files")
+            successful, failed = process_files(torrent_files, cursor)
+            total_successful += successful
+            total_failed += failed
+        
         conn.commit()
-        logging.info("All database updates committed")
+        print(f"Completed: {total_successful} successful, {total_failed} failed")
         
     except Exception as e:
-        logging.error(f"Main process error: {e}")
+        logging.error(f"Error: {e}")
+        print(f"Error: {e}")
         raise
     finally:
         if 'conn' in locals():
             conn.close()
-        logging.info("fast_sev process completed")
 
 if __name__ == "__main__":
     main()

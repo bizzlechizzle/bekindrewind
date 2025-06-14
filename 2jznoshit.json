@@ -30,7 +30,7 @@
     "dryrun": false
   },
   "nos": {
-    "logs": false
+    "logs": true
   },
   "honda_S2000": {
     "logs": false,
@@ -65,7 +65,7 @@
     "logs": false
   },
   "fast_sev": {
-    "logs": false
+    "logs": true
   },
   "spoon_engine": {
     "logs": true
@@ -73,6 +73,9 @@
   "release_group": {
     "full": "[pleaserewind]",
     "short": "PLZRWD"
+  },
+  "f8_fr": {
+    "logs": true
   },
   "api_keys": {
     "omdb": "4d3ea197",
@@ -87,7 +90,8 @@
       "it_torrent": "season",
       "timeout": "5 seconds",
       "def_loc": "/Volumes/barbossa/upload/tor",
-      "scn_loc": "/Volumes/barbossa/upload/scn"
+      "scn_loc": "/Volumes/barbossa/upload/scn",
+      "tor_loc": "/Volumes/barbossa/upload/upl"
     }
   },
   "library": {

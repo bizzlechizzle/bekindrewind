@@ -252,7 +252,7 @@ def process_qtr_mile_data(conn, config):
         # Single query to get all data joined by checksum
         query = """
         SELECT DISTINCT i.it_checksum,
-               i.it_sea_no, i.it_ep_no, i.it_subtitles,
+               i.it_sea_no, i.it_ep_no, i.it_subtitles, i.it_series,
                fp.ff_resolution, fp.ff_hdr, fp.ff_codec_basic, fp.ff_codec_adv, 
                fp.ff_vid_br, fp.ff_fr, fp.ff_aud_codec, fp.ff_aud_chan, 
                fp.ff_aud_sr, fp.ff_aud_br, fp.ff_ep_dur, fp.ff_size, 
@@ -313,7 +313,7 @@ def process_qtr_mile_data(conn, config):
 
 def process_row(row, config, release_group, user_input):
     """Process single row of joined data"""
-    (checksum, it_sea_no, it_ep_no, it_subtitles,
+    (checksum, it_sea_no, it_ep_no, it_subtitles, it_series,
      ff_resolution, ff_hdr, ff_codec_basic, ff_codec_adv, ff_vid_br, ff_fr,
      ff_aud_codec, ff_aud_chan, ff_aud_sr, ff_aud_br, ff_ep_dur, ff_size,
      ff_subtitles, ff_language,
@@ -333,7 +333,7 @@ def process_row(row, config, release_group, user_input):
     
     return {
         'it_checksum': checksum,
-        'qm_series': pw_series,
+        'qm_series': pw_series or it_series,
         'qm_sea_no': normalize_season_episode(it_sea_no, "Season"),
         'qm_ep_no': normalize_season_episode(it_ep_no, "Episode"),
         'qm_ser_desc': get_longest_description(tmdb_series_desc, tvdb_series_desc, imdb_series_desc, tvm_series_desc),

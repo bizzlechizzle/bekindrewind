@@ -46,7 +46,7 @@ def execute_script(script_name, args=None):
     logging.info(f"Executing: {' '.join(cmd)}")
     
     try:
-        result = subprocess.run(cmd, check=False)
+        result = subprocess.run(cmd, check=False, capture_output=False)
         logging.info(f"Script {script_name} exit code: {result.returncode}")
         return result.returncode
     except KeyboardInterrupt:
@@ -82,7 +82,10 @@ def main():
         'fast_five.py',
         'galo12.py',
         'oil_change.py',
-        'fast_six.py'
+        'fast_six.py',
+        'fast_sev.py',
+        'spoon_engine.py',
+        'f8_fr.py'
     ]
     
     args = sys.argv[1:] if len(sys.argv) > 1 else None
