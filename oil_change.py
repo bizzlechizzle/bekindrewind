@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 oil_change.py - Media file organization and copying script
-Bulletproof version with comprehensive error handling and validation
+Sequential version for NAS-friendly processing (one file at a time)
 """
 
 import json
@@ -11,9 +11,7 @@ import sys
 import shutil
 import subprocess
 import logging
-import threading
 from pathlib import Path
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, List, Tuple, Optional, Set
 import hashlib
 import time
@@ -28,8 +26,6 @@ class MediaOrganizer:
         self.config_file = '2jznoshit.json'
         self.logger = self._setup_basic_logger()
         self.processed_files: Set[str] = set()
-        self.db_lock = threading.Lock()
-        self.processed_lock = threading.Lock()
         
     def _setup_basic_logger(self):
         """Setup a basic logger that's always available"""
@@ -54,7 +50,7 @@ class MediaOrganizer:
             file_handler = logging.FileHandler(log_file)
             console_handler = logging.StreamHandler(sys.stdout)
             
-            formatter = logging.Formatter('%(asctime)s - %(threadName)s - %(levelname)s - %(message)s')
+            formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
             file_handler.setFormatter(formatter)
             console_handler.setFormatter(formatter)
             
@@ -125,35 +121,34 @@ class MediaOrganizer:
     
     @contextmanager
     def get_db_connection(self):
-        """Thread-safe database connection context manager"""
+        """Database connection context manager"""
         if not os.path.exists(self.db_file):
             self.logger.error(f"Database file not found: {self.db_file}")
             raise FileNotFoundError(f"Database not found: {self.db_file}")
             
         conn = None
         try:
-            with self.db_lock:
-                conn = sqlite3.connect(self.db_file, timeout=30.0)
-                conn.row_factory = sqlite3.Row
-                
-                # Verify table and columns exist
-                cursor = conn.cursor()
-                cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='import_tuner'")
-                if not cursor.fetchone():
-                    raise ValueError("Table 'import_tuner' not found in database")
-                
-                # Check required columns
-                cursor.execute("PRAGMA table_info(import_tuner)")
-                columns = [row[1] for row in cursor.fetchall()]
-                required_columns = ['it_checksum', 'it_torrent', 'it_sea_no', 'it_ep_no', 
-                                  'file_location', 'it_series', 'it_ep_title', 'it_def_loc']
-                
-                missing_columns = [col for col in required_columns if col not in columns]
-                if missing_columns:
-                    raise ValueError(f"Missing required columns: {missing_columns}")
-                
-                yield conn
-                
+            conn = sqlite3.connect(self.db_file, timeout=30.0)
+            conn.row_factory = sqlite3.Row
+            
+            # Verify table and columns exist
+            cursor = conn.cursor()
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='import_tuner'")
+            if not cursor.fetchone():
+                raise ValueError("Table 'import_tuner' not found in database")
+            
+            # Check required columns
+            cursor.execute("PRAGMA table_info(import_tuner)")
+            columns = [row[1] for row in cursor.fetchall()]
+            required_columns = ['it_checksum', 'it_torrent', 'it_sea_no', 'it_ep_no', 
+                              'file_location', 'it_series', 'it_ep_title', 'it_def_loc']
+            
+            missing_columns = [col for col in required_columns if col not in columns]
+            if missing_columns:
+                raise ValueError(f"Missing required columns: {missing_columns}")
+            
+            yield conn
+            
         except sqlite3.Error as e:
             self.logger.error(f"Database error: {e}")
             raise
@@ -594,12 +589,12 @@ class MediaOrganizer:
         try:
             source_path = record['file_location']
             
-            # Thread-safe check for already processed files
-            with self.processed_lock:
-                if checksum in self.processed_files:
-                    return True, f"Already processed: {checksum}"
-                # Add to processed set immediately to prevent duplicates
-                self.processed_files.add(checksum)
+            # Check for already processed files
+            if checksum in self.processed_files:
+                return True, f"Already processed: {checksum}"
+            
+            # Add to processed set immediately to prevent duplicates
+            self.processed_files.add(checksum)
             
             # Verify source file exists and is accessible
             if not os.path.exists(source_path):
@@ -677,18 +672,17 @@ class MediaOrganizer:
             
         except Exception as e:
             # Remove from processed set if we failed
-            with self.processed_lock:
-                self.processed_files.discard(checksum)
+            self.processed_files.discard(checksum)
             
             self.logger.error(f"Unexpected error processing {checksum}: {e}")
             return False, f"Processing failed with error: {e}"
     
     def run(self) -> None:
-        """Main execution function with comprehensive error handling"""
+        """Main execution function with sequential file processing"""
         start_time = time.time()
         
         try:
-            self.logger.info("=== Starting oil_change process ===")
+            self.logger.info("=== Starting oil_change process (Sequential Mode) ===")
             
             # Step 1: Load configuration
             self.logger.info("Step 1: Loading configuration...")
@@ -699,6 +693,7 @@ class MediaOrganizer:
             self.setup_logging(log_enabled)
             
             self.logger.info(f"Logging enabled: {log_enabled}")
+            self.logger.info("Sequential processing mode (NAS-friendly)")
             
             # Get and validate def_loc
             def_loc = config['user_input']['default']['def_loc']
@@ -748,59 +743,45 @@ class MediaOrganizer:
             for t_type, count in torrent_types.items():
                 self.logger.info(f"  {t_type}: {count} files")
             
-            # Step 3-4: Process files with optimized threading
-            self.logger.info("Step 3-4: Processing files...")
-            
-            # Determine optimal number of workers
-            # For file I/O operations, too many threads can hurt performance
-            cpu_count = os.cpu_count() or 1
-            max_workers = min(cpu_count, 3)  # Conservative limit for file operations
-            
-            self.logger.info(f"Using {max_workers} worker threads")
+            # Step 3-4: Process files sequentially (one at a time)
+            self.logger.info("Step 3-4: Processing files sequentially...")
             
             successful = 0
             failed = 0
             total_bytes_processed = 0
             
-            # Process files with thread pool
-            with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="FileProcessor") as executor:
-                # Submit all tasks
-                future_to_record = {
-                    executor.submit(self.process_file, record, def_loc): record 
-                    for record in records
-                }
+            # Process files one at a time
+            for i, record in enumerate(records, 1):
+                checksum = record.get('it_checksum', 'unknown')
                 
-                self.logger.info(f"Submitted {len(future_to_record)} processing tasks")
+                self.logger.info(f"Processing file {i}/{len(records)}: {checksum[:16]}...")
                 
-                # Process completed tasks
-                for i, future in enumerate(as_completed(future_to_record), 1):
-                    record = future_to_record[future]
-                    checksum = record.get('it_checksum', 'unknown')
+                try:
+                    success, message = self.process_file(record, def_loc)
                     
-                    try:
-                        success, message = future.result()
+                    if success:
+                        successful += 1
+                        # Try to get file size for statistics
+                        try:
+                            file_path = record.get('file_location', '')
+                            if file_path and os.path.exists(file_path):
+                                total_bytes_processed += os.path.getsize(file_path)
+                        except:
+                            pass  # Don't fail on statistics
                         
-                        if success:
-                            successful += 1
-                            # Try to get file size for statistics
-                            try:
-                                file_path = record.get('file_location', '')
-                                if file_path and os.path.exists(file_path):
-                                    total_bytes_processed += os.path.getsize(file_path)
-                            except:
-                                pass  # Don't fail on statistics
-                            
-                            self.logger.info(f"✓ [{i}/{len(records)}] {message}")
-                        else:
-                            failed += 1
-                            self.logger.error(f"✗ [{i}/{len(records)}] {message}")
-                            
-                    except Exception as e:
+                        self.logger.info(f"✓ [{i}/{len(records)}] {message}")
+                    else:
                         failed += 1
-                        self.logger.error(f"✗ [{i}/{len(records)}] Unexpected error for {checksum}: {e}")
-                
-                # Wait for all tasks to complete
-                self.logger.debug("Waiting for all tasks to complete...")
+                        self.logger.error(f"✗ [{i}/{len(records)}] {message}")
+                        
+                    # Small delay between files to be gentle on the NAS
+                    if i < len(records):  # Don't sleep after the last file
+                        time.sleep(0.5)  # 500ms delay between files
+                        
+                except Exception as e:
+                    failed += 1
+                    self.logger.error(f"✗ [{i}/{len(records)}] Unexpected error for {checksum}: {e}")
+                    time.sleep(0.5)  # Still delay on error
             
             # Final summary
             elapsed_time = time.time() - start_time

@@ -59,7 +59,7 @@
     "logs": false
   },
   "oil_change": {
-    "logs": true
+    "logs": false
   },
   "fast_six": {
     "logs": false
@@ -70,12 +70,13 @@
   "spoon_engine": {
     "logs": false
   },
+  "f8_fr": {
+    "logs": false 
+  },
   "release_group": {
     "full": "[pleaserewind]",
     "short": "PLZRWD"
-  },
-  "f8_fr": {
-    "logs": false
+  
   },
   "api_keys": {
     "omdb": "4d3ea197",
@@ -91,7 +92,8 @@
       "timeout": "5 seconds",
       "def_loc": "/Volumes/barbossa/upload/tor",
       "scn_loc": "/Volumes/barbossa/upload/scn",
-      "tor_loc": "/Volumes/barbossa/upload/upl"
+      "tor_loc": "/Volumes/barbossa/upload/upl",
+      "tracker": "Torrent Leech; https://tracker.torrentleech.org/a/d025d0f3398ffad2ab9eb52a79e9cc55"
     }
   },
   "library": {

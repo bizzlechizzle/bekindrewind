@@ -1,0 +1,7 @@
+# ignore SQLite journal files
+danger2manifold.db
+danger2manifold.db-shm
+danger2manifold.db-wal
+
+# ignore any log files
+*.log

@@ -6,18 +6,16 @@ import logging
 import os
 import sys
 import subprocess
-import shutil
+import fcntl
+import errno
 from pathlib import Path
 from collections import defaultdict
-from concurrent.futures import ThreadPoolExecutor, as_completed
-import multiprocessing
 
 def setup_logging():
     try:
         with open('2jznoshit.json', 'r') as f:
-            config = json.load(f)
-            log_enabled = config.get('f8_fr', {}).get('logs', False)
-    except (FileNotFoundError, json.JSONDecodeError, KeyError):
+            log_enabled = json.load(f).get('f8_fr', {}).get('logs', False)
+    except:
         log_enabled = False
     
     if log_enabled:
@@ -34,57 +32,60 @@ def load_config():
     try:
         with open('2jznoshit.json', 'r') as f:
             return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError) as e:
+    except Exception as e:
         logging.error(f"Config load failed: {e}")
         sys.exit(1)
 
 def get_db_data():
-    db_path = "danger2manifold.db"
-    if not os.path.exists(db_path):
-        logging.error(f"Database not found: {db_path}")
+    if not os.path.exists("danger2manifold.db"):
+        logging.error("Database not found")
         sys.exit(1)
     
     try:
-        with sqlite3.connect(db_path) as conn:
+        with sqlite3.connect("danger2manifold.db") as conn:
             conn.row_factory = sqlite3.Row
-            cursor = conn.execute("""
+            return [dict(row) for row in conn.execute("""
                 SELECT it_file_loc, it_torrent, it_series, it_sea_no, it_ep_no, 
                        it_ep_title, it_checksum, file_name
                 FROM import_tuner 
                 WHERE it_file_loc IS NOT NULL AND it_file_loc != ''
                 ORDER BY it_series, it_sea_no, it_ep_no
-            """)
-            return [dict(row) for row in cursor.fetchall()]
+            """)]
     except sqlite3.Error as e:
         logging.error(f"Database error: {e}")
         sys.exit(1)
 
-def validate_py3createtorrent():
+def check_file_unlocked(path):
+    """Check if file is locked by trying to open with exclusive lock"""
     try:
-        result = subprocess.run(['py3createtorrent', '--version'], 
-                              capture_output=True, text=True, timeout=10)
-        return result.returncode == 0
-    except (subprocess.TimeoutExpired, subprocess.SubprocessError, FileNotFoundError):
-        logging.error("py3createtorrent not available")
-        sys.exit(1)
-
-def safe_copy_file(src, dst):
-    """Copy file with fallback from hardlink to copy"""
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    
-    if dst.exists():
+        with open(path, 'rb') as f:
+            fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
         return True
-        
-    try:
-        os.link(src, dst)
-        return True
-    except OSError:
-        try:
-            shutil.copy2(src, dst)
-            return True
-        except OSError as e:
-            logging.error(f"Copy failed {src} -> {dst}: {e}")
+    except (OSError, IOError) as e:
+        if e.errno in (errno.EAGAIN, errno.EACCES):
             return False
+        return True
+
+def wait_for_file_unlock(path, max_wait=30):
+    """Wait for file to become unlocked"""
+    import time
+    for _ in range(max_wait):
+        if check_file_unlocked(path):
+            return True
+        time.sleep(1)
+    return False
+
+def validate_path_access(source_path):
+    """Validate all files in path are accessible"""
+    if source_path.is_file():
+        return wait_for_file_unlock(source_path)
+    
+    for file_path in source_path.rglob('*'):
+        if file_path.is_file() and not wait_for_file_unlock(file_path, 5):
+            logging.warning(f"File locked: {file_path}")
+            return False
+    return True
 
 def create_nfo(path, series, season=None, episode=None, episodes=None):
     """Create NFO file"""
@@ -112,149 +113,147 @@ def create_nfo(path, series, season=None, episode=None, episodes=None):
     except OSError:
         return False
 
-def create_torrent(source_path, torrent_path, tracker_url=None):
-    """Create torrent file"""
-    cmd = ['py3createtorrent', '-o', str(torrent_path), str(source_path)]
+def create_torrent(source_path, torrent_path, tracker_url):
+    """Create torrent file with file lock checking"""
+    source_path = Path(source_path)
+    torrent_path = Path(torrent_path)
+    
+    if not source_path.exists():
+        logging.error(f"Source not found: {source_path}")
+        return False
+    
+    if not validate_path_access(source_path):
+        logging.error(f"Files locked or inaccessible: {source_path}")
+        return False
+    
+    # Ensure torrent directory exists
+    torrent_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    cmd = [
+        'py3createtorrent',
+        '--threads', '1',  # Single thread to avoid resource conflicts
+        '-o', str(torrent_path),
+        str(source_path)
+    ]
+    
     if tracker_url:
         cmd.extend(['-t', tracker_url])
     
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
-        success = result.returncode == 0
-        if not success:
-            logging.error(f"Torrent creation failed: {result.stderr}")
-        return success
-    except subprocess.TimeoutExpired:
-        logging.error(f"Torrent timeout: {source_path}")
-        return False
-    except subprocess.SubprocessError as e:
-        logging.error(f"Subprocess error: {e}")
-        return False
-
-def process_series(series, episodes, tor_loc):
-    """Create series torrent"""
-    logging.info(f"Processing series: {series}")
-    
-    # Use the existing series folder from the first episode
-    first_ep_path = Path(episodes[0]['it_file_loc'])
-    
-    # Find the series folder (should be 2 levels up from episode file)
-    series_dir = first_ep_path.parent.parent
-    
-    if series_dir.exists():
-        torrent_path = tor_loc / f"{series_dir.name}.torrent"
-        return create_torrent(series_dir, torrent_path)
-    return False
-
-def process_season(series, season, episodes, tor_loc):
-    """Create season torrent"""
-    logging.info(f"Processing season: {series} {season}")
-    
-    # Use the existing season folder from the first episode
-    first_ep_path = Path(episodes[0]['it_file_loc'])
-    season_dir = first_ep_path.parent
-    
-    if season_dir.exists():
-        torrent_path = tor_loc / f"{season_dir.name}.torrent"
-        return create_torrent(season_dir, torrent_path)
-    return False
-
-def process_episode(episode, tor_loc):
-    """Create episode torrent"""
-    logging.info(f"Processing episode: {episode['it_series']}")
-    
-    # Use the existing episode folder or file parent
-    ep_path = Path(episode['it_file_loc'])
-    
-    # If it's in an episode folder, use that folder, otherwise use the file's parent
-    if ep_path.parent.name != ep_path.parent.parent.name:
-        ep_dir = ep_path.parent
-    else:
-        ep_dir = ep_path.parent
-    
-    if ep_dir.exists():
-        torrent_path = tor_loc / f"{ep_dir.name}.torrent"
-        return create_torrent(ep_dir, torrent_path)
-    return False
-
-def get_torrent_tasks(data, tor_loc):
-    """Generate torrent creation tasks"""
-    structure = defaultdict(lambda: defaultdict(list))
-    
-    # Group data
-    for item in data:
-        if not Path(item['it_file_loc']).exists():
-            logging.warning(f"File not found: {item['it_file_loc']}")
-            continue
+        # Run with reduced priority and timeout
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=300,
+            preexec_fn=lambda: os.nice(10) if hasattr(os, 'nice') else None
+        )
         
-        series = item['it_series'].strip()
-        structure[item['it_torrent']][series].append(item)
+        if result.returncode == 0:
+            logging.info(f"Created: {torrent_path}")
+            return True
+        else:
+            logging.error(f"Torrent failed: {result.stderr}")
+            return False
+            
+    except subprocess.TimeoutExpired:
+        logging.error(f"Timeout: {source_path}")
+        return False
+    except Exception as e:
+        logging.error(f"Error: {e}")
+        return False
+
+def process_torrents(data, config):
+    """Process all torrent creation tasks"""
+    tracker_url = config['user_input']['default']['tracker'].split(';')[1].strip()
+    tor_loc = Path(config['user_input']['default']['tor_loc'])
     
-    tasks = []
+    # Group data by series and torrent type
+    groups = defaultdict(lambda: defaultdict(list))
+    for item in data:
+        if Path(item['it_file_loc']).exists():
+            groups[item['it_torrent']][item['it_series']].append(item)
     
-    for torrent_type, series_data in structure.items():
+    results = []
+    total_tasks = 0
+    
+    for torrent_type, series_data in groups.items():
         for series, episodes in series_data.items():
-            if torrent_type == 'season':
-                # Group by season
+            
+            if torrent_type == 'episode':
+                # Individual episode torrents
+                for episode in episodes:
+                    ep_path = Path(episode['it_file_loc'])
+                    ep_dir = ep_path.parent
+                    torrent_path = tor_loc / f"{ep_dir.name}.torrent"
+                    
+                    logging.info(f"Processing episode: {ep_dir.name}")
+                    result = create_torrent(ep_dir, torrent_path, tracker_url)
+                    results.append(result)
+                    total_tasks += 1
+                    
+            elif torrent_type == 'season':
+                # Group episodes by season
                 seasons = defaultdict(list)
                 for ep in episodes:
                     seasons[ep['it_sea_no']].append(ep)
                 
-                for season, season_eps in seasons.items():
+                for season_num, season_eps in seasons.items():
                     if len(season_eps) > 1:
-                        tasks.append(('season', series, season, season_eps))
+                        # Multi-episode season torrent
+                        season_path = Path(season_eps[0]['it_file_loc']).parent
+                        torrent_path = tor_loc / f"{season_path.name}.torrent"
+                        
+                        logging.info(f"Processing season: {season_path.name}")
+                        result = create_torrent(season_path, torrent_path, tracker_url)
+                        results.append(result)
+                        total_tasks += 1
                     else:
-                        tasks.append(('episode', season_eps[0], None, None))
+                        # Single episode in season
+                        episode = season_eps[0]
+                        ep_path = Path(episode['it_file_loc'])
+                        ep_dir = ep_path.parent
+                        torrent_path = tor_loc / f"{ep_dir.name}.torrent"
+                        
+                        logging.info(f"Processing single episode: {ep_dir.name}")
+                        result = create_torrent(ep_dir, torrent_path, tracker_url)
+                        results.append(result)
+                        total_tasks += 1
                 
                 # Series torrent if multiple seasons
                 if len(seasons) > 1:
-                    tasks.append(('series', series, None, episodes))
+                    series_path = Path(episodes[0]['it_file_loc']).parent.parent
+                    torrent_path = tor_loc / f"{series_path.name}.torrent"
                     
-            elif torrent_type == 'episode':
-                for episode in episodes:
-                    tasks.append(('episode', episode, None, None))
+                    logging.info(f"Processing series: {series_path.name}")
+                    result = create_torrent(series_path, torrent_path, tracker_url)
+                    results.append(result)
+                    total_tasks += 1
+                    
             else:
-                tasks.append(('series', series, None, episodes))
-    
-    return tasks
-
-def execute_tasks(tasks, tor_loc):
-    """Execute torrent creation tasks in parallel"""
-    max_workers = min(multiprocessing.cpu_count(), len(tasks), 8)
-    
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = []
-        
-        for task in tasks:
-            task_type, arg1, arg2, arg3 = task
-            
-            if task_type == 'series':
-                future = executor.submit(process_series, arg1, arg3, tor_loc)
-            elif task_type == 'season':
-                future = executor.submit(process_season, arg1, arg2, arg3, tor_loc)
-            elif task_type == 'episode':
-                future = executor.submit(process_episode, arg1, tor_loc)
-            
-            futures.append((future, task))
-        
-        results = []
-        for future, task in futures:
-            try:
-                result = future.result()
+                # Series torrent
+                series_path = Path(episodes[0]['it_file_loc']).parent.parent
+                torrent_path = tor_loc / f"{series_path.name}.torrent"
+                
+                logging.info(f"Processing series: {series_path.name}")
+                result = create_torrent(series_path, torrent_path, tracker_url)
                 results.append(result)
-                status = "SUCCESS" if result else "FAILED"
-                logging.info(f"{status}: {task[0]} - {task[1] if isinstance(task[1], str) else 'episode'}")
-            except Exception as e:
-                logging.error(f"Task error {task}: {e}")
-                results.append(False)
+                total_tasks += 1
     
-    return results
+    return results, total_tasks
 
 def main():
     setup_logging()
     logging.info("Starting f8_fr")
     
-    validate_py3createtorrent()
+    # Validate py3createtorrent
+    try:
+        subprocess.run(['py3createtorrent', '--version'], 
+                      capture_output=True, timeout=10, check=True)
+    except:
+        logging.error("py3createtorrent not available")
+        sys.exit(1)
+    
     config = load_config()
     data = get_db_data()
     
@@ -264,17 +263,11 @@ def main():
     
     logging.info(f"Processing {len(data)} entries")
     
-    tor_loc = Path(config['user_input']['default']['tor_loc'])
-    tor_loc.mkdir(parents=True, exist_ok=True)
-    
-    tasks = get_torrent_tasks(data, tor_loc)
-    results = execute_tasks(tasks, tor_loc)
-    
+    results, total_tasks = process_torrents(data, config)
     successful = sum(results)
-    total = len(results)
     
-    logging.info(f"Complete: {successful}/{total} successful")
-    print(f"Complete: {successful}/{total} torrents created")
+    logging.info(f"Complete: {successful}/{total_tasks} successful")
+    print(f"Complete: {successful}/{total_tasks} torrents created")
 
 if __name__ == "__main__":
     main()

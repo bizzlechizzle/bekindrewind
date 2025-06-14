@@ -12,7 +12,7 @@ import sqlite3
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Tuple
 
 # Configuration
 VIDEO_EXTENSIONS = frozenset(['.mkv', '.mp4', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v'])
@@ -24,8 +24,8 @@ SPECIAL_KEYWORDS = frozenset(['sneak peek', 'teaser', 'trailer', 'extended editi
                               "director's cut", 'directors cut', 'uncut', 'bonus', 'extra', 'preview',
                               'directors', 'sneak peak'])
 
-# Pre-compile regex
-FILENAME_PATTERN = re.compile(r'^(.+?)_S(\d+)E(\d+)_(.+)$')
+# Pre-compile regex - matches Series_SxxExx_Remainder
+FILENAME_PATTERN = re.compile(r'^(.+?)_S(\d+)E(\d+)_(.*)$')
 
 # Global config cache
 _CONFIG_CACHE = None
@@ -89,7 +89,6 @@ def calculate_sha256(file_path: Path) -> str:
     """Calculate SHA256 checksum with optimized settings."""
     sha256_hash = hashlib.sha256()
     try:
-        # Optimized for SSD: 8MB chunks, 8MB buffer
         with file_path.open('rb', buffering=8388608) as f:
             while chunk := f.read(8388608):
                 sha256_hash.update(chunk)
@@ -103,8 +102,7 @@ def find_subtitle_files(video_path: Path) -> str:
     """Check if subtitles exist for video file. Returns 'yes' or empty string."""
     video_stem = video_path.stem
     try:
-        parent_files = list(video_path.parent.iterdir())
-        for item in parent_files:
+        for item in video_path.parent.iterdir():
             if (item.is_file() and 
                 item.suffix.lower() in SUBTITLE_EXTENSIONS and
                 item.stem.startswith(video_stem)):
@@ -115,32 +113,32 @@ def find_subtitle_files(video_path: Path) -> str:
 
 
 def parse_filename(filename: str) -> Optional[Dict[str, str]]:
-    """Parse TV show filename following the pattern: Series_SxxExx_Special_Title."""
+    """Parse TV show filename following pattern: Series_SxxExx_Special_Title."""
     stem = Path(filename).stem
     
     match = FILENAME_PATTERN.match(stem)
     if not match:
-        logging.warning(f"Filename does not match expected pattern: {filename}")
+        logging.warning(f"Filename does not match pattern Series_SxxExx_Remainder: {filename}")
         return None
     
     series, season_num, episode_num, remainder = match.groups()
     series = series.replace('_', ' ')
     
-    # Check for special keywords at the start of remainder
-    remainder_lower = remainder.lower()
+    # Parse special and title from remainder
     special = ""
     title = remainder
     
-    for keyword in SPECIAL_KEYWORDS:
-        keyword_underscore = keyword.replace(' ', '_')
-        if remainder_lower.startswith(keyword.lower()):
-            if len(remainder) > len(keyword_underscore) and remainder[len(keyword_underscore)] == '_':
-                special = remainder[:len(keyword_underscore)].replace('_', ' ')
-                title = remainder[len(keyword_underscore) + 1:]
-            else:
-                special = keyword
-                title = remainder[len(keyword_underscore):]
-            break
+    if remainder:
+        remainder_lower = remainder.lower()
+        
+        for keyword in SPECIAL_KEYWORDS:
+            keyword_underscore = keyword.replace(' ', '_')
+            if remainder_lower.startswith(keyword.lower()):
+                # Check if there's content after the keyword
+                if len(remainder) > len(keyword_underscore) and remainder[len(keyword_underscore)] == '_':
+                    special = remainder[:len(keyword_underscore)].replace('_', ' ')
+                    title = remainder[len(keyword_underscore) + 1:]
+                    break
     
     title = title.replace('_', ' ').strip()
     if not title:
@@ -172,29 +170,18 @@ def find_video_files(root_path: Path) -> List[Path]:
     return video_files
 
 
-def get_database_tables() -> Set[str]:
-    """Get all table names from database that have matching columns."""
-    try:
-        with sqlite3.connect('danger2manifold.db') as conn:
-            cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
-            tables = {row[0] for row in cursor.fetchall()}
-            tables.discard('import_tuner')
-            return tables
-    except sqlite3.Error as e:
-        logging.error(f"Failed to get database tables: {e}")
-        return set()
-
-
 def process_single_file(args: Tuple[Path, Dict[str, str]]) -> Optional[Dict[str, str]]:
     """Process a single video file and return database row data."""
     file_path, user_prefs = args
     
     parsed = parse_filename(file_path.name)
     if not parsed:
+        logging.warning(f"Failed to parse filename: {file_path.name}")
         return None
     
     checksum = calculate_sha256(file_path)
     if not checksum:
+        logging.warning(f"Failed to calculate checksum: {file_path.name}")
         return None
     
     # Check for library match
@@ -203,11 +190,12 @@ def process_single_file(args: Tuple[Path, Dict[str, str]]) -> Optional[Dict[str,
     if library_match:
         it_src = library_match.get('it_src', user_prefs['it_src'])
         it_src_link = library_match.get('it_src_link', user_prefs['it_src_link'])
+        logging.info(f"Library match found for series: {parsed['series']}")
     else:
         it_src = user_prefs['it_src']
         it_src_link = user_prefs['it_src_link']
     
-    return {
+    result = {
         'it_checksum': checksum,
         'file_name': file_path.name,
         'file_location': str(file_path.resolve()),
@@ -221,6 +209,9 @@ def process_single_file(args: Tuple[Path, Dict[str, str]]) -> Optional[Dict[str,
         'it_src_link': it_src_link,
         'it_torrent': user_prefs['it_torrent']
     }
+    
+    logging.info(f"Successfully processed: {file_path.name}")
+    return result
 
 
 def get_user_input(series_name: str, user_prefs: Dict[str, str], log_enabled: bool) -> Dict[str, str]:
@@ -267,8 +258,8 @@ def get_user_input(series_name: str, user_prefs: Dict[str, str], log_enabled: bo
         return user_prefs
 
 
-def save_to_database(data: List[Dict[str, str]]) -> None:
-    """Save processed data to database and populate cross-tables."""
+def save_to_database(data: List[Dict[str, str]], log_enabled: bool) -> None:
+    """Save processed data to database and populate ALL tables with matching it_ columns."""
     if not data:
         return
     
@@ -277,7 +268,7 @@ def save_to_database(data: List[Dict[str, str]]) -> None:
         conn.execute('PRAGMA synchronous=NORMAL')
         conn.execute('PRAGMA cache_size=10000')
         
-        # Create table if not exists
+        # Create import_tuner table if not exists
         conn.execute('''
             CREATE TABLE IF NOT EXISTS import_tuner (
                 it_checksum TEXT PRIMARY KEY,
@@ -292,68 +283,112 @@ def save_to_database(data: List[Dict[str, str]]) -> None:
                 it_src TEXT,
                 it_src_link TEXT,
                 it_torrent TEXT,
-                it_ep_avl INTEGER DEFAULT 0
+                it_ep_avl INTEGER DEFAULT 0,
+                it_def_loc TEXT
             )
         ''')
         
-        # Batch insert to import_tuner
-        conn.executemany('''
-            INSERT OR REPLACE INTO import_tuner 
-            (it_checksum, file_name, file_location, it_series, it_sea_no, it_ep_no, 
-             it_ep_title, it_special, it_subtitles, it_src, it_src_link, it_torrent, it_ep_avl)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', [
-            (entry['it_checksum'], entry['file_name'], entry['file_location'],
-             entry['it_series'], entry['it_sea_no'], entry['it_ep_no'],
-             entry['it_ep_title'], entry['it_special'], entry['it_subtitles'],
-             entry['it_src'], entry['it_src_link'], entry['it_torrent'], 0)
-            for entry in data
-        ])
+        # Get existing checksums
+        existing_checksums = set(row[0] for row in conn.execute('SELECT it_checksum FROM import_tuner'))
         
-        # Get all tables for cross-population
-        cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
-        tables = [row[0] for row in cursor.fetchall() if row[0] != 'import_tuner']
+        # Filter duplicates
+        new_data = []
+        duplicate_count = 0
         
-        # Batch process all tables
-        for table in tables:
+        for entry in data:
+            if entry['it_checksum'] in existing_checksums:
+                duplicate_count += 1
+                logging.warning(f"Duplicate checksum found: {entry['file_name']}")
+            else:
+                new_data.append(entry)
+        
+        # Insert new records into import_tuner
+        if new_data:
             try:
-                cursor = conn.execute(f"PRAGMA table_info(`{table}`)")
-                columns = [row[1] for row in cursor.fetchall()]
-                
-                # Handle oil_change table specifically
-                if table == 'oil_change':
-                    # oil_change has: it_checksum, file_loc, it_torrent
-                    oil_change_data = [
-                        (entry['it_checksum'], entry['file_location'], entry['it_torrent'])
-                        for entry in data
-                    ]
-                    conn.executemany('''
-                        INSERT OR IGNORE INTO oil_change (it_checksum, file_loc, it_torrent)
-                        VALUES (?, ?, ?)
-                    ''', oil_change_data)
-                else:
-                    # Map columns efficiently for other tables
-                    column_mapping = [col for col in columns if col in 
-                                     ['it_checksum', 'it_series', 'it_sea_no', 'it_ep_no', 'it_src', 'it_src_link']]
-                    
-                    if column_mapping:
-                        placeholders = ', '.join(['?'] * len(column_mapping))
-                        columns_str = ', '.join([f'`{col}`' for col in column_mapping])
-                        
-                        batch_data = [
-                            tuple(entry[col] for col in column_mapping)
-                            for entry in data
-                        ]
-                        
-                        conn.executemany(f'''
-                            INSERT OR IGNORE INTO `{table}` ({columns_str})
-                            VALUES ({placeholders})
-                        ''', batch_data)
-                    
+                conn.executemany('''
+                    INSERT INTO import_tuner 
+                    (it_checksum, file_name, file_location, it_series, it_sea_no, it_ep_no, 
+                     it_ep_title, it_special, it_subtitles, it_src, it_src_link, it_torrent, it_ep_avl, it_def_loc)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', [
+                    (entry['it_checksum'], entry['file_name'], entry['file_location'],
+                     entry['it_series'], entry['it_sea_no'], entry['it_ep_no'],
+                     entry['it_ep_title'], entry['it_special'], entry['it_subtitles'],
+                     entry['it_src'], entry['it_src_link'], entry['it_torrent'], 0, entry['file_location'])
+                    for entry in new_data
+                ])
+                logging.info(f"Inserted {len(new_data)} records into import_tuner")
             except sqlite3.Error as e:
-                logging.warning(f"Failed to update table {table}: {e}")
+                logging.error(f"Failed to insert into import_tuner: {e}")
+                return
+            
+            # Get all other tables in database
+            tables = [row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'") 
+                     if row[0] != 'import_tuner']
+            
+            # For each table, find ALL it_ columns and fill them
+            for table in tables:
+                try:
+                    columns_info = conn.execute(f"PRAGMA table_info(`{table}`)").fetchall()
+                    table_columns = [col[1] for col in columns_info]  # col[1] is column name
+                    
+                    # Find ALL columns that start with "it_" 
+                    it_columns = [col for col in table_columns if col.startswith('it_')]
+                    
+                    if not it_columns:
+                        logging.info(f"Table '{table}' has no 'it_' columns")
+                        continue
+                    
+                    # Special handling for oil_change table column mappings
+                    if table == 'oil_change':
+                        column_mappings = []
+                        if 'it_checksum' in table_columns:
+                            column_mappings.append(('it_checksum', 'it_checksum'))
+                        if 'file_loc' in table_columns:
+                            column_mappings.append(('file_location', 'file_loc'))
+                        if 'it_torrent' in table_columns:
+                            column_mappings.append(('it_torrent', 'it_torrent'))
+                    else:
+                        # For all other tables, match it_ columns directly
+                        column_mappings = [(col, col) for col in it_columns if col in 
+                                         ['it_checksum', 'it_series', 'it_sea_no', 'it_ep_no', 'it_ep_title', 
+                                          'it_special', 'it_subtitles', 'it_src', 'it_src_link', 'it_torrent']]
+                    
+                    if column_mappings:
+                        # Build INSERT query
+                        db_columns = [db_col for _, db_col in column_mappings]
+                        placeholders = ', '.join(['?'] * len(db_columns))
+                        columns_str = ', '.join([f'`{col}`' for col in db_columns])
+                        
+                        # Prepare data rows
+                        rows = []
+                        for entry in new_data:
+                            row = []
+                            for data_col, _ in column_mappings:
+                                value = entry.get(data_col, '')
+                                row.append(value)
+                            rows.append(tuple(row))
+                        
+                        # Insert data
+                        conn.executemany(f'''
+                            INSERT OR REPLACE INTO `{table}` ({columns_str})
+                            VALUES ({placeholders})
+                        ''', rows)
+                        
+                        logging.info(f"Updated table '{table}' with {len(column_mappings)} it_ columns: {db_columns}")
+                    else:
+                        logging.info(f"Table '{table}' has it_ columns but none match our data: {it_columns}")
+                        
+                except sqlite3.Error as e:
+                    logging.error(f"Failed to update table '{table}': {e}")
+                except Exception as e:
+                    logging.error(f"Unexpected error updating table '{table}': {e}")
         
-        logging.info(f"Saved {len(data)} records to database and updated cross-tables")
+        # Report results
+        if log_enabled and duplicate_count > 0:
+            print(f"Skipped {duplicate_count} duplicate files")
+        
+        logging.info(f"Saved {len(new_data)} new records, skipped {duplicate_count} duplicates")
 
 
 def save_to_json(data: List[Dict[str, str]]) -> None:
@@ -371,49 +406,29 @@ def save_to_json(data: List[Dict[str, str]]) -> None:
 
 
 def clean_drag_drop_path(path_str: str) -> str:
-    """Clean up messy drag and drop paths - improved version."""
+    """Clean up messy drag and drop paths."""
     if not path_str:
         return path_str
     
-    cleaned = path_str.strip()
+    cleaned = path_str.strip().strip('\'"')
     
-    # Remove wrapping quotes
-    if ((cleaned.startswith('"') and cleaned.endswith('"')) or 
-        (cleaned.startswith("'") and cleaned.endswith("'"))):
-        cleaned = cleaned[1:-1]
-    
-    # IMPORTANT: Test if path exists as-is first (for shell-escaped paths)
-    # This handles cases where the path is already properly escaped
+    # Test if path exists as-is first
     try:
-        test_path = Path(cleaned).expanduser()
-        if test_path.exists():
+        if Path(cleaned).expanduser().exists():
             return cleaned
     except (OSError, RuntimeError):
         pass
     
-    # If path doesn't exist as-is, try unescaping common shell escapes
-    unescaped = cleaned
-    unescaped = unescaped.replace('\\ ', ' ')    # Escaped space
-    unescaped = unescaped.replace("\\'", "'")    # Escaped single quote
-    unescaped = unescaped.replace('\\"', '"')    # Escaped double quote
-    unescaped = unescaped.replace('\\!', '!')    # Escaped exclamation mark
-    unescaped = unescaped.replace('\\(', '(')    # Escaped parenthesis
-    unescaped = unescaped.replace('\\)', ')')    # Escaped parenthesis
-    unescaped = unescaped.replace('\\[', '[')    # Escaped bracket
-    unescaped = unescaped.replace('\\]', ']')    # Escaped bracket
-    unescaped = unescaped.replace('\\&', '&')    # Escaped ampersand
-    unescaped = unescaped.replace('\\\\', '\\')  # Double backslash
+    # Try unescaping common shell escapes
+    unescaped = cleaned.replace('\\ ', ' ').replace("\\'", "'").replace('\\"', '"').replace('\\!', '!').replace('\\(', '(').replace('\\)', ')').replace('\\[', '[').replace('\\]', ']').replace('\\&', '&').replace('\\\\', '\\')
     
-    # Test if unescaped version exists
     try:
-        test_unescaped = Path(unescaped).expanduser()
-        if test_unescaped.exists():
+        if Path(unescaped).expanduser().exists():
             return unescaped
     except (OSError, RuntimeError):
         pass
     
-    # If neither version works, return the cleaned version (remove final quotes/spaces)
-    return cleaned.strip('\'"')
+    return cleaned
 
 
 def main():
@@ -437,7 +452,7 @@ def main():
             logging.info("User cancelled directory input")
             return
     
-    # Clean up drag and drop path with improved logic
+    # Clean up drag and drop path
     target_path = clean_drag_drop_path(target_path)
     
     try:
@@ -481,7 +496,6 @@ def main():
     failed_count = 0
     
     import os
-    # Optimal thread count for I/O bound operations
     max_workers = min(os.cpu_count() * 2, 12)
     
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -504,7 +518,7 @@ def main():
     
     # Save results
     if processed_data:
-        save_to_database(processed_data)
+        save_to_database(processed_data, log_enabled)
         save_to_json(processed_data)
         
         if log_enabled:
@@ -515,8 +529,18 @@ def main():
         logging.info(f"Processing complete: {len(processed_data)} success, {failed_count} failed")
     else:
         if log_enabled:
-            print("No files were successfully processed")
-        logging.warning("No files were successfully processed")
+            print(f"No files were successfully processed. Found {len(video_files)} video files, {failed_count} failed processing")
+        logging.warning(f"No files were successfully processed. Found {len(video_files)} video files, {failed_count} failed processing")
+        
+        # Debug: Log first few filenames to check parsing
+        if video_files and log_enabled:
+            print("Sample filenames found:")
+            for i, vf in enumerate(video_files[:3]):
+                print(f"  {i+1}. {vf.name}")
+                parsed = parse_filename(vf.name)
+                print(f"     Parsed: {parsed}")
+                if not parsed:
+                    print(f"     ERROR: Filename doesn't match pattern Series_SxxExx_Title")
 
 
 if __name__ == '__main__':

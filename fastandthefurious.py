@@ -131,119 +131,146 @@ def prompt_user_decision(checksums, scores):
             return False
 
 
+def get_checksum_tables(cursor):
+    """Get tables that have it_checksum column."""
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+    checksum_tables = []
+    for (table_name,) in cursor.fetchall():
+        try:
+            cursor.execute(f"PRAGMA table_info(`{table_name}`)")
+            columns = [col[1] for col in cursor.fetchall()]
+            if 'it_checksum' in columns:
+                checksum_tables.append(table_name)
+        except sqlite3.Error:
+            continue
+    return checksum_tables
+
+
 def main():
     setup_logging()
     
-    with sqlite3.connect('danger2manifold.db') as conn:
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        
-        # Get all episodes and normalize episode numbers
-        cursor.execute("SELECT it_checksum, it_ep_no, it_series, It_sea_no FROM import_tuner")
-        episodes = cursor.fetchall()
-        
-        if not episodes:
-            print("No episodes found in database")
-            return
-        
-        # Group by series/season/normalized episode number
-        ep_groups = defaultdict(list)
-        for row in episodes:
-            ep_num = normalize_episode(row['it_ep_no'])
-            if ep_num is not None:
-                key = (row['it_series'], row['It_sea_no'], ep_num)
-                ep_groups[key].append(row['it_checksum'])
-        
-        deleted_count = 0
-        
-        for (series, season, ep_num), checksums in ep_groups.items():
-            if len(checksums) <= 1:
-                continue
+    try:
+        with sqlite3.connect('danger2manifold.db') as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
             
-            logging.info(f"Processing {len(checksums)} duplicates for {series} S{season}E{ep_num}")
+            # Get checksum tables once
+            checksum_tables = get_checksum_tables(cursor)
             
-            # Get scoring data
-            placeholders = ','.join('?' * len(checksums))
-            cursor.execute(f"""
-                SELECT 
-                    it.it_checksum,
-                    it.it_special,
-                    it.file_location,
-                    fp.ff_ep_dur,
-                    fp.ff_size,
-                    mi.mi_ep_dur,
-                    mi.mi_size
-                FROM import_tuner it
-                LEFT JOIN ford_probe fp ON it.it_checksum = fp.it_checksum
-                LEFT JOIN miata_info mi ON it.it_checksum = mi.it_checksum
-                WHERE it.it_checksum IN ({placeholders})
-            """, checksums)
+            # Get all episodes and normalize episode numbers
+            cursor.execute("SELECT it_checksum, it_ep_no, it_series, It_sea_no FROM import_tuner")
+            episodes = cursor.fetchall()
             
-            rows = cursor.fetchall()
-            if not rows:
-                continue
+            if not episodes:
+                print("No episodes found in database")
+                return
             
-            # Calculate scores
-            scores = calculate_scores(rows)
+            # Group by series/season/normalized episode number
+            ep_groups = defaultdict(list)
+            for row in episodes:
+                ep_num = normalize_episode(row['it_ep_no'])
+                if ep_num is not None:
+                    key = (row['it_series'], row['It_sea_no'], ep_num)
+                    ep_groups[key].append(row['it_checksum'])
             
-            if len(scores) < 2:
-                continue
+            deleted_count = 0
             
-            max_score = max(scores.values())
-            min_score = min(scores.values())
-            score_diff = max_score - min_score
-            
-            logging.info(f"Score range: {min_score:.6f} to {max_score:.6f} (diff: {score_diff:.6f})")
-            
-            # Decide whether to delete
-            should_delete = False
-            if score_diff > 2:
-                should_delete = True
-            elif score_diff > 0:
-                should_delete = prompt_user_decision(checksums, scores)
-            
-            if should_delete:
-                worst_checksum = max(scores, key=scores.get)
+            for (series, season, ep_num), checksums in ep_groups.items():
+                if len(checksums) <= 1:
+                    continue
                 
-                # Get file path from the row data
-                file_path = None
-                for row in rows:
-                    if row['it_checksum'] == worst_checksum:
-                        file_path = row['file_location']
-                        break
+                logging.info(f"Processing {len(checksums)} duplicates for {series} S{season}E{ep_num}")
                 
-                logging.info(f"Deleting {worst_checksum} (score: {max_score:.6f})")
-                print(f"Deleting duplicate with score {max_score:.6f}")
+                # Get scoring data
+                placeholders = ','.join('?' * len(checksums))
+                cursor.execute(f"""
+                    SELECT 
+                        it.it_checksum,
+                        it.it_special,
+                        it.file_location,
+                        fp.ff_ep_dur,
+                        fp.ff_size,
+                        mi.mi_ep_dur,
+                        mi.mi_size
+                    FROM import_tuner it
+                    LEFT JOIN ford_probe fp ON it.it_checksum = fp.it_checksum
+                    LEFT JOIN miata_info mi ON it.it_checksum = mi.it_checksum
+                    WHERE it.it_checksum IN ({placeholders})
+                """, checksums)
                 
-                # Delete from all tables
-                cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
-                for (table_name,) in cursor.fetchall():
-                    try:
-                        cursor.execute(f"DELETE FROM `{table_name}` WHERE it_checksum = ?", (worst_checksum,))
-                    except sqlite3.OperationalError:
-                        pass
+                rows = cursor.fetchall()
+                if not rows:
+                    continue
                 
-                delete_file(file_path)
-                deleted_count += 1
-        
-        # Update episode counts
-        cursor.execute("""
-            UPDATE import_tuner 
-            SET it_ep_avl = (
-                SELECT COUNT(*) 
-                FROM import_tuner i2 
-                WHERE i2.it_series = import_tuner.it_series 
-                AND i2.It_sea_no = import_tuner.It_sea_no
-            )
-        """)
-        
-        cursor.execute("SELECT COUNT(DISTINCT it_checksum) FROM import_tuner")
-        total_checksums = cursor.fetchone()[0]
-        
-        conn.commit()
-        
-        logging.info(f"Deleted {deleted_count} duplicates, {total_checksums} total checksums")
-        print(f"Deleted {deleted_count} duplicate entries. Total checksums: {total_checksums}")
+                # Calculate scores
+                scores = calculate_scores(rows)
+                
+                if len(scores) < 2:
+                    continue
+                
+                max_score = max(scores.values())
+                min_score = min(scores.values())
+                score_diff = max_score - min_score
+                
+                logging.info(f"Score range: {min_score:.6f} to {max_score:.6f} (diff: {score_diff:.6f})")
+                
+                # Decide whether to delete
+                should_delete = False
+                if score_diff > 2:
+                    should_delete = True
+                elif score_diff > 0:
+                    should_delete = prompt_user_decision(checksums, scores)
+                else:
+                    # Equal scores - delete second one
+                    checksums_list = list(scores.keys())
+                    scores[checksums_list[1]] = max_score + 1
+                    should_delete = True
+                
+                if should_delete:
+                    worst_checksum = max(scores, key=scores.get)
+                    
+                    # Get file path from the row data
+                    file_path = None
+                    for row in rows:
+                        if row['it_checksum'] == worst_checksum:
+                            file_path = row['file_location']
+                            break
+                    
+                    logging.info(f"Deleting {worst_checksum} (score: {max_score:.6f})")
+                    print(f"Deleting duplicate with score {max_score:.6f}")
+                    
+                    # Delete from checksum tables only
+                    for table_name in checksum_tables:
+                        try:
+                            cursor.execute(f"DELETE FROM `{table_name}` WHERE it_checksum = ?", (worst_checksum,))
+                        except sqlite3.Error:
+                            pass
+                    
+                    delete_file(file_path)
+                    deleted_count += 1
+            
+            # Update episode counts
+            cursor.execute("""
+                UPDATE import_tuner 
+                SET it_ep_avl = (
+                    SELECT COUNT(*) 
+                    FROM import_tuner i2 
+                    WHERE i2.it_series = import_tuner.it_series 
+                    AND i2.It_sea_no = import_tuner.It_sea_no
+                )
+            """)
+            
+            cursor.execute("SELECT COUNT(DISTINCT it_checksum) FROM import_tuner")
+            total_checksums = cursor.fetchone()[0]
+            
+            conn.commit()
+            
+            logging.info(f"Deleted {deleted_count} duplicates, {total_checksums} total checksums")
+            print(f"Deleted {deleted_count} duplicate entries. Total checksums: {total_checksums}")
+    
+    except sqlite3.Error as e:
+        logging.error(f"Database error: {e}")
+        print(f"Database error: {e}")
 
 
 if __name__ == "__main__":
