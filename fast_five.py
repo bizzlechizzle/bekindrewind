@@ -219,10 +219,12 @@ def get_majority_answer(*values):
     return counter.most_common(1)[0][0]
 
 def get_prioritized_network(*networks):
-    """Get network with priority: TMDB > TVDb > IMDb > TV Maze"""
+    """Get trusted airing network with priority: TMDB > TVDb > IMDb > TV Maze"""
     for network in networks:
-        if network and str(network).strip():
-            return str(network).strip()
+        if network is not None:
+            cleaned = str(network).strip()
+            if cleaned and cleaned.lower() not in ("null", "none", "critical content"):
+                return cleaned
     return None
 
 def combine_genres(*genre_lists):

@@ -1,0 +1,33 @@
+2025-06-14 09:29:00,784 - INFO - Starting spoon_engine
+2025-06-14 09:29:00,784 - INFO - Processing 10 files with dynamic screenshot counts
+2025-06-14 09:29:01,568 - DEBUG - Screenshot 1/2 for Cheap Old Houses_S01E02_Peoria_ Cheap Old House Heaven.mkv
+2025-06-14 09:29:01,636 - DEBUG - Screenshot 1/2 for Cheap Old Houses_S01E10_The Cheapest Old House.mkv
+2025-06-14 09:29:01,646 - DEBUG - Screenshot 1/2 for Cheap Old Houses_S01E01_Time Warp in Upstate New York.mkv
+2025-06-14 09:29:01,671 - DEBUG - Screenshot 1/2 for Cheap Old Houses_S01E04_A Midcentury Gem Under $150K.mkv
+2025-06-14 09:29:01,740 - DEBUG - Screenshot 2/2 for Cheap Old Houses_S01E02_Peoria_ Cheap Old House Heaven.mkv
+2025-06-14 09:29:01,855 - DEBUG - Screenshot 2/2 for Cheap Old Houses_S01E10_The Cheapest Old House.mkv
+2025-06-14 09:29:01,860 - DEBUG - Screenshot 2/2 for Cheap Old Houses_S01E04_A Midcentury Gem Under $150K.mkv
+2025-06-14 09:29:01,862 - DEBUG - Screenshot 2/2 for Cheap Old Houses_S01E01_Time Warp in Upstate New York.mkv
+2025-06-14 09:29:14,681 - INFO - Processed: Cheap Old Houses_S01E02_Peoria_ Cheap Old House Heaven.mkv
+2025-06-14 09:29:15,441 - INFO - Processed: Cheap Old Houses_S01E10_The Cheapest Old House.mkv
+2025-06-14 09:29:16,019 - DEBUG - Screenshot 1/2 for Cheap Old Houses_S01E09_Cheap Old Barns and Ballrooms!.mkv
+2025-06-14 09:29:16,048 - INFO - Processed: Cheap Old Houses_S01E04_A Midcentury Gem Under $150K.mkv
+2025-06-14 09:29:16,073 - INFO - Processed: Cheap Old Houses_S01E01_Time Warp in Upstate New York.mkv
+2025-06-14 09:29:16,441 - DEBUG - Screenshot 2/2 for Cheap Old Houses_S01E09_Cheap Old Barns and Ballrooms!.mkv
+2025-06-14 09:29:16,449 - DEBUG - Screenshot 1/2 for Cheap Old Houses_S01E08_A Hotel for $8 a Square Foot.mkv
+2025-06-14 09:29:16,717 - DEBUG - Screenshot 2/2 for Cheap Old Houses_S01E08_A Hotel for $8 a Square Foot.mkv
+2025-06-14 09:29:16,850 - DEBUG - Screenshot 1/2 for Cheap Old Houses_S01E07_Cheap Old Farmhouse Dreams!.mkv
+2025-06-14 09:29:16,989 - DEBUG - Screenshot 1/2 for Cheap Old Houses_S01E06_Playful Indiana Victorians.mkv
+2025-06-14 09:29:17,285 - DEBUG - Screenshot 2/2 for Cheap Old Houses_S01E07_Cheap Old Farmhouse Dreams!.mkv
+2025-06-14 09:29:17,531 - DEBUG - Screenshot 2/2 for Cheap Old Houses_S01E06_Playful Indiana Victorians.mkv
+2025-06-14 09:29:25,550 - INFO - Processed: Cheap Old Houses_S01E09_Cheap Old Barns and Ballrooms!.mkv
+2025-06-14 09:29:25,719 - INFO - Processed: Cheap Old Houses_S01E08_A Hotel for $8 a Square Foot.mkv
+2025-06-14 09:29:27,063 - DEBUG - Screenshot 1/2 for Cheap Old Houses_S01E03_ITS_ SO_ OLD_ Built in 1750.mkv
+2025-06-14 09:29:27,318 - DEBUG - Screenshot 2/2 for Cheap Old Houses_S01E03_ITS_ SO_ OLD_ Built in 1750.mkv
+2025-06-14 09:29:27,854 - DEBUG - Screenshot 1/2 for Cheap Old Houses_S01E05_Monster Midwest Mansions.mkv
+2025-06-14 09:29:28,832 - INFO - Processed: Cheap Old Houses_S01E07_Cheap Old Farmhouse Dreams!.mkv
+2025-06-14 09:29:28,852 - DEBUG - Screenshot 2/2 for Cheap Old Houses_S01E05_Monster Midwest Mansions.mkv
+2025-06-14 09:29:29,702 - INFO - Processed: Cheap Old Houses_S01E06_Playful Indiana Victorians.mkv
+2025-06-14 09:29:34,654 - INFO - Processed: Cheap Old Houses_S01E03_ITS_ SO_ OLD_ Built in 1750.mkv
+2025-06-14 09:29:35,390 - INFO - Processed: Cheap Old Houses_S01E05_Monster Midwest Mansions.mkv
+2025-06-14 09:29:35,399 - INFO - Processing complete. Success: 10, Failed: 0

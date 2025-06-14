@@ -24,36 +24,88 @@ def get_files_from_db(db_path):
         return cur.fetchall()
 
 def get_duration(file_path, checksum, db_path):
+    """Get video duration with fallback to ffprobe."""
     with sqlite3.connect(db_path) as conn:
         cur = conn.cursor()
         cur.execute("SELECT ff_ep_dur FROM ford_probe WHERE it_checksum = ?", (checksum,))
         row = cur.fetchone()
+    
     if row and row[0]:
         dur = row[0]
         if isinstance(dur, (int, float)):
-            return float(dur)
+            return max(float(dur), 60.0)  # Minimum 1 minute
         if isinstance(dur, str) and ':' in dur:
             parts = dur.split(':')
             if len(parts) == 3:
-                h, m, s = map(float, parts)
-                return h * 3600 + m * 60 + s
-    # fallback to ffprobe
-    cmd = [
-        'ffprobe', '-v', 'error',
-        '-show_entries', 'format=duration',
-        '-of', 'default=noprint_wrappers=1:nokey=1',
-        str(file_path)
-    ]
+                try:
+                    h, m, s = map(float, parts)
+                    return max(h * 3600 + m * 60 + s, 60.0)
+                except ValueError:
+                    pass
+    
+    # Fallback to ffprobe
     try:
-        out = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        return float(out.stdout.strip())
-    except subprocess.CalledProcessError:
-        return 2700.0
+        result = subprocess.run(
+            ['ffprobe', '-v', 'error', '-show_entries', 'format=duration',
+             '-of', 'default=noprint_wrappers=1:nokey=1', str(file_path)],
+            capture_output=True, text=True, check=True, timeout=30
+        )
+        return max(float(result.stdout.strip()), 60.0)
+    except (subprocess.CalledProcessError, ValueError, subprocess.TimeoutExpired):
+        return 2700.0  # 45min default
+
+def build_screenshot_dir(src_path, scn_loc):
+    """Build screenshot directory maintaining folder structure."""
+    parts = src_path.parts
+    out_dir = Path(scn_loc)
+    
+    # Find last directory before filename (always use parent)
+    if len(parts) > 1:
+        out_dir = out_dir / parts[-2]  # Use parent directory name
+    
+    out_dir.mkdir(parents=True, exist_ok=True)
+    return out_dir
+
+def calculate_screenshot_count(duration, total_files):
+    """Calculate screenshots based on duration and file count."""
+    if total_files <= 8:
+        return 7  # Short seasons get more screenshots
+    return max(1, min(int(duration // 600), 5))  # 1 per 10min, max 5
+
+def generate_screenshots(src_path, file_name, duration, num_screenshots, out_dir, logger):
+    """Generate screenshots at random intervals."""
+    if duration < 120:  # Less than 2 minutes
+        timestamps = [duration * 0.5]  # Single middle screenshot
+    else:
+        # Generate unique random timestamps in 10-90% range
+        start_time = duration * 0.1
+        end_time = duration * 0.9
+        timestamps = sorted(random.uniform(start_time, end_time) 
+                          for _ in range(num_screenshots))
+    
+    base_name = Path(file_name).stem  # Use database file_name
+    
+    for i, ts in enumerate(timestamps, 1):
+        dest = out_dir / f"{base_name}_{i}.jpg"
+        
+        try:
+            subprocess.run([
+                'ffmpeg', '-ss', f'{ts:.2f}', '-i', str(src_path),
+                '-vframes', '1', '-q:v', '2', '-y', str(dest)
+            ], capture_output=True, check=True, timeout=60)
+            
+            logger.debug(f"Screenshot {i}/{len(timestamps)} for {file_name}")
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+            logger.error(f"Screenshot failed for {file_name} at {ts:.2f}s")
+            raise
 
 def process_video(args):
-    checksum, file_loc, file_name, scn_loc, num_screenshots, log_enabled, db_path = args
-    logger = logging.getLogger('spoon_engine')
+    checksum, file_loc, file_name, scn_loc, total_files, log_enabled, db_path = args
+    
+    # Setup logging with unique logger per process
+    logger = logging.getLogger(f'spoon_engine_{checksum[:8]}')
     logger.setLevel(logging.DEBUG if log_enabled else logging.WARNING)
+    
     if log_enabled and not any(isinstance(h, logging.FileHandler) for h in logger.handlers):
         h = logging.FileHandler('spoon_engine.log')
         h.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
@@ -64,43 +116,31 @@ def process_video(args):
         if not src.exists():
             return checksum, False, f"File not found: {file_loc}"
 
-        # fail-fast playback test
-        subprocess.run(
-            ['ffmpeg', '-v', 'error', '-i', file_loc, '-frames:v', '1', '-f', 'null', '-'],
-            capture_output=True, check=True
-        )
+        # Fail-fast playback test
+        subprocess.run([
+            'ffmpeg', '-v', 'error', '-i', str(src), 
+            '-frames:v', '1', '-f', 'null', '-'
+        ], capture_output=True, check=True, timeout=30)
 
-        duration = get_duration(file_loc, checksum, db_path)
+        # Get duration and calculate screenshots
+        duration = get_duration(str(src), checksum, db_path)
+        num_screenshots = calculate_screenshot_count(duration, total_files)
 
-        # build screenshot path
-        parts = src.parts
-        out_dir = Path(scn_loc)
-        if 'tor' in parts:
-            idx = parts.index('tor')
-            for p in parts[idx + 1 : -1]:
-                out_dir /= p
-        else:
-            out_dir /= src.parent.name
-        out_dir.mkdir(parents=True, exist_ok=True)
+        # Build output directory
+        out_dir = build_screenshot_dir(src, scn_loc)
 
-        base = src.stem
-        for i in range(1, num_screenshots + 1):
-            ts = random.uniform(duration * 0.1, duration * 0.9)
-            dest = out_dir / f"{base}_{i}.jpg"
-            subprocess.run(
-                ['ffmpeg', '-ss', str(ts), '-i', file_loc,
-                 '-vframes', '1', '-q:v', '2', '-y', str(dest)],
-                capture_output=True, check=True
-            )
-            logger.debug(f"Screenshot {i}/{num_screenshots} for {file_name}")
+        # Set random seed for reproducible results
+        random.seed(hash(checksum) & 0x7FFFFFFF)
+        
+        # Generate screenshots
+        generate_screenshots(src, file_name, duration, num_screenshots, out_dir, logger)
 
-        # strip metadata
+        # Strip metadata
         temp = src.with_suffix('.temp.mkv')
-        subprocess.run(
-            ['ffmpeg', '-i', file_loc, '-map_metadata', '-1',
-             '-c', 'copy', '-bitexact', '-y', str(temp)],
-            capture_output=True, check=True
-        )
+        subprocess.run([
+            'ffmpeg', '-i', str(src), '-map_metadata', '-1',
+            '-c', 'copy', '-bitexact', '-y', str(temp)
+        ], capture_output=True, check=True)
         temp.replace(src)
 
         logger.info(f"Processed: {file_name}")
@@ -139,10 +179,10 @@ def main():
         return
 
     total = len(files)
-    num = 7 if total <= 8 else 1
-    logger.info(f"Processing {total} files with {num} screenshots each")
+    logger.info(f"Processing {total} files with dynamic screenshot counts")
 
-    args = [(c, loc, name, scn_loc, num, log_enabled, db_path) for c, loc, name in files]
+    # Updated args to pass total_files instead of fixed num
+    args = [(c, loc, name, scn_loc, total, log_enabled, db_path) for c, loc, name in files]
     max_workers = min(max(multiprocessing.cpu_count() // 2, 1), 4)
 
     success = fail = 0
