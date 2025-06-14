@@ -35,14 +35,25 @@ def load_config():
         return {}
 
 def normalize_season_episode(value, prefix):
-    """Normalize season/episode numbers"""
+    """Normalize season/episode numbers - FIX 1: Proper season capitalization"""
     if not value:
         return None
-    match = re.search(r'(\d+)', str(value))
+    
+    # Convert to string and remove duplicate words (Season Season -> Season)
+    value_str = str(value)
+    value_str = re.sub(r'\b(Season|season)\s+\1\b', r'\1', value_str, flags=re.IGNORECASE)
+    
+    # Capitalize 'Season' or 'Episode' properly
+    value_str = re.sub(r'\bseason\b', 'Season', value_str, flags=re.IGNORECASE)
+    value_str = re.sub(r'\bepisode\b', 'Episode', value_str, flags=re.IGNORECASE)
+    
+    # Extract number and format
+    match = re.search(r'(\d+)', value_str)
     if match:
         num = int(match.group(1))
         return f"{prefix} {num:02d}"
-    return value
+    
+    return value_str
 
 def normalize_airdate(date_str):
     """Normalize airdate to 'Month Day, Year' format"""
@@ -117,8 +128,8 @@ def normalize_video_bitrate(bitrate):
     return str(bitrate)
 
 def normalize_audio_bitrate(bitrate):
-    """Normalize audio bitrate format"""
-    if not bitrate:
+    """Normalize audio bitrate format - FIX 2: Ensure proper extraction"""
+    if not bitrate or not str(bitrate).strip():
         return None
     
     match = re.search(r'(\d+)', str(bitrate))
@@ -126,6 +137,18 @@ def normalize_audio_bitrate(bitrate):
         return f"{match.group(1)} kbps"
     
     return str(bitrate)
+
+def format_duration_in_minutes(seconds):
+    """Convert seconds to minutes format - FIX 3"""
+    if not seconds:
+        return seconds
+    
+    try:
+        total_seconds = int(float(seconds))
+        minutes = total_seconds / 60
+        return f"{minutes:.1f} minutes"
+    except (ValueError, TypeError):
+        return seconds
 
 def normalize_file_size(size_str):
     """Normalize file size - over 2048 MB post in GB"""
@@ -354,7 +377,7 @@ def process_row(row, config, release_group, user_input):
         'qm_aud_chn': ff_aud_chan or mi_aud_chan,
         'qm_aud_sr': ff_aud_sr or mi_aud_sr,
         'qm_aud_br': normalize_audio_bitrate(ff_aud_br or mi_aud_br),
-        'qm_dur': ff_ep_dur or mi_ep_dur,
+        'qm_dur': format_duration_in_minutes(ff_ep_dur or mi_ep_dur),
         'qm_lan': normalize_language(ff_language or mi_language),
         'qm_sub': normalize_subtitles(ff_subtitles, mi_subtitles, it_subtitles),
         'qm_size': normalize_file_size(ff_size or mi_size),

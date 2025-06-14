@@ -30,7 +30,7 @@
     "dryrun": false
   },
   "nos": {
-    "logs": true
+    "logs": false
   },
   "honda_S2000": {
     "logs": false,
@@ -59,23 +59,23 @@
     "logs": false
   },
   "oil_change": {
-    "logs": false
+    "logs": true
   },
   "fast_six": {
     "logs": false
   },
   "fast_sev": {
-    "logs": true
+    "logs": false
   },
   "spoon_engine": {
-    "logs": true
+    "logs": false
   },
   "release_group": {
     "full": "[pleaserewind]",
     "short": "PLZRWD"
   },
   "f8_fr": {
-    "logs": true
+    "logs": false
   },
   "api_keys": {
     "omdb": "4d3ea197",

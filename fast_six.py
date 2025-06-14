@@ -60,6 +60,7 @@ class NFOGenerator:
         logger = logging.getLogger('fast_six')
         logger.handlers.clear()
         
+        # Fix: Check correct config path for fast_six logs setting
         if self.config.get('fast_six', {}).get('logs', False):
             logging.basicConfig(
                 level=logging.DEBUG,
@@ -206,6 +207,34 @@ class NFOGenerator:
         except ValueError:
             return str(size_str)
     
+    def _convert_seconds_to_minutes(self, seconds_str: str) -> str:
+        """Convert seconds string to minutes only format (e.g., '1477 seconds' -> '25 minutes')"""
+        if not seconds_str or 'seconds' not in str(seconds_str):
+            return str(seconds_str) if seconds_str else ""
+        
+        try:
+            seconds = int(str(seconds_str).replace(' seconds', ''))
+            minutes = round(seconds / 60)  # Round to nearest minute
+            
+            if minutes > 0:
+                return f"{minutes} minutes"
+            else:
+                return "1 minute"  # Minimum 1 minute for any content
+        except (ValueError, TypeError):
+            return str(seconds_str)
+    
+    def _capitalize_season_header(self, season_str: str) -> str:
+        """Capitalize season for header display (e.g., 'season 01' -> 'Season 01')"""
+        if not season_str:
+            return str(season_str) if season_str else ""
+        
+        season_str = str(season_str)
+        # If it starts with lowercase 'season', capitalize it
+        if season_str.lower().startswith('season'):
+            return 'Season' + season_str[6:]  # Replace 'season' with 'Season'
+        
+        return season_str
+    
     def _normalize_source(self, src_str: str) -> str:
         if not src_str:
             return ""
@@ -243,10 +272,100 @@ class NFOGenerator:
         except (AttributeError, ValueError):
             return f"S01E{episode}" if episode else "S01E01"
     
-    def _build_episode_list(self, import_row: sqlite3.Row) -> Tuple[str, str, str, int]:
+    def _clean_quotes(self, text: str) -> str:
+        """Clean quotes in text to prevent NFO formatting issues"""
+        if not text:
+            return ""
+        # Replace problematic quotes with standard ASCII quotes
+        text = str(text)
+        text = text.replace('"', '"').replace('"', '"')  # Smart quotes to regular
+        text = text.replace(''', "'").replace(''', "'")  # Smart apostrophes to regular
+        # Remove all double quotes entirely for NFO compatibility
+        text = text.replace('"', '')
+        return text
+    
+    def _calculate_total_size(self, import_row: sqlite3.Row) -> str:
+        """Calculate total size by summing all qm_size values for the torrent"""
         torrent_type = self._safe_get(import_row, 'it_torrent')
         if torrent_type not in ['season', 'series']:
-            return "", "", "", 0
+            # For single episode, just return its size
+            qtr_data = self._get_qtr_mile_data(self._safe_get(import_row, 'it_checksum'))
+            if qtr_data:
+                size = self._normalize_file_size(self._safe_get(qtr_data, 'qm_size') or '')
+                self.logger.debug(f"Single episode size: {size}")
+                return size
+            return ""
+        
+        try:
+            with self._get_db_connection() as conn:
+                if torrent_type == 'series':
+                    query = """
+                        SELECT q.qm_size
+                        FROM import_tuner i 
+                        LEFT JOIN qtr_mile q ON i.it_checksum = q.it_checksum 
+                        WHERE i.it_series = ? AND q.qm_size IS NOT NULL
+                    """
+                    params = (self._safe_get(import_row, 'it_series'),)
+                else:  # season
+                    query = """
+                        SELECT q.qm_size
+                        FROM import_tuner i 
+                        LEFT JOIN qtr_mile q ON i.it_checksum = q.it_checksum 
+                        WHERE i.it_series = ? AND i.it_sea_no = ? AND q.qm_size IS NOT NULL
+                    """
+                    params = (self._safe_get(import_row, 'it_series'), self._safe_get(import_row, 'it_sea_no'))
+                
+                sizes = conn.execute(query, params).fetchall()
+                self.logger.debug(f"Found {len(sizes)} size entries for {torrent_type}")
+                
+                if not sizes:
+                    self.logger.warning(f"No sizes found for {torrent_type}")
+                    return ""
+                
+                total_bytes = 0
+                for size_row in sizes:
+                    size_str = size_row['qm_size']
+                    if size_str:
+                        # Extract numeric value and convert to bytes
+                        match = self.NUMERIC.search(str(size_str))
+                        if match:
+                            try:
+                                value = float(match.group(1))
+                                size_lower = str(size_str).lower()
+                                if 'gb' in size_lower:
+                                    total_bytes += value * 1024 * 1024 * 1024
+                                elif 'mb' in size_lower:
+                                    total_bytes += value * 1024 * 1024
+                                elif 'kb' in size_lower:
+                                    total_bytes += value * 1024
+                                else:
+                                    # Assume MB if no unit specified
+                                    total_bytes += value * 1024 * 1024
+                                self.logger.debug(f"Added {value} from {size_str}, total bytes: {total_bytes}")
+                            except ValueError:
+                                self.logger.warning(f"Could not parse size value: {size_str}")
+                                continue
+                
+                # Convert total bytes back to appropriate unit
+                if total_bytes >= 1024 * 1024 * 1024:  # GB
+                    result = f"{total_bytes / (1024 * 1024 * 1024):.2f} GB"
+                elif total_bytes >= 1024 * 1024:  # MB
+                    result = f"{total_bytes / (1024 * 1024):.2f} MB"
+                else:
+                    result = f"{total_bytes / 1024:.2f} KB"
+                
+                self.logger.debug(f"Final calculated total size: {result}")
+                return result
+                
+        except Exception as e:
+            self.logger.error(f"Error calculating total size: {e}")
+            return ""
+    
+    def _build_episode_list(self, import_row: sqlite3.Row) -> Tuple[str, str, int]:
+        """Build episode list and return (episode_list, episode_details, episode_count)"""
+        torrent_type = self._safe_get(import_row, 'it_torrent')
+        if torrent_type not in ['season', 'series']:
+            return "", "", 0
         
         try:
             with self._get_db_connection() as conn:
@@ -282,15 +401,20 @@ class NFOGenerator:
                                self._safe_get(ep, 'qm_ep_desc') or 
                                'Episode Title')
                     ep_desc = self._safe_get(ep, 'qm_ep_desc') or ep_title
+                    
+                    # Clean quotes in title and description
+                    ep_title = self._clean_quotes(ep_title)
+                    ep_desc = self._clean_quotes(ep_desc)
+                    
                     ep_air = self._normalize_date(self._safe_get(ep, 'qm_air') or '')
                     ep_num = self._safe_get(ep, 'it_ep_no') or '01'
                     season_num = self._safe_get(ep, 'it_sea_no') or '01'
-                    ep_duration = self._safe_get(ep, 'qm_dur') or ''
+                    ep_duration = self._convert_seconds_to_minutes(self._safe_get(ep, 'qm_dur') or '')
                     ep_size = self._normalize_file_size(self._safe_get(ep, 'qm_size') or '')
                     
-                    # Format as S##E## for episode list
+                    # Format as S##E## for episode list - FIXED: Removed quotes completely
                     formatted_ep = self._format_season_episode(season_num, ep_num)
-                    episode_list.append(f'"{formatted_ep}" - {ep_title}')
+                    episode_list.append(f'{formatted_ep} - {ep_title}')
                     
                     # Format episode details
                     episode_details.append(
@@ -305,7 +429,7 @@ class NFOGenerator:
                 
         except Exception as e:
             self.logger.warning(f"Error building episode list: {e}")
-            return "", "", "", 0
+            return "", "", 0
     
     def _get_container_format(self, file_path: str) -> str:
         """Extract container format from file extension"""
@@ -326,18 +450,22 @@ class NFOGenerator:
     def _format_template_data(self, import_row: sqlite3.Row, qtr_row: sqlite3.Row) -> Dict:
         qtr_data = dict(qtr_row) if qtr_row else {}
         episode_list, episode_details, episode_count = self._build_episode_list(import_row)
+        total_size = self._calculate_total_size(import_row)
         
         file_path = self._safe_get(import_row, 'it_def_loc') or ''
         
+        # Debug logging for total size
+        self.logger.debug(f"Calculated total size: {total_size}")
+        
         # Build data dict with all required mappings
         data = {
-            'qm_series': qtr_data.get('qm_series', ''),
-            'qm_sea_no': self._safe_get(import_row, 'it_sea_no') or '01',
+            'qm_series': self._clean_quotes(qtr_data.get('qm_series', '')),
+            'qm_sea_no': self._capitalize_season_header(self._safe_get(import_row, 'it_sea_no') or '01'),
             'qm_ep_no': qtr_data.get('qm_ep_no', ''),
-            'qm_ser_desc': qtr_data.get('qm_ser_desc', ''),
-            'qm_sea_desc': qtr_data.get('qm_sea_desc', ''),
-            'qm_ep_desc': qtr_data.get('qm_ep_desc', ''),
-            'qm_ep_tit': qtr_data.get('qm_ep_tit', ''),
+            'qm_ser_desc': self._clean_quotes(qtr_data.get('qm_ser_desc', '')),
+            'qm_sea_desc': self._clean_quotes(qtr_data.get('qm_sea_desc', '')),
+            'qm_ep_desc': self._clean_quotes(qtr_data.get('qm_ep_desc', '')),
+            'qm_ep_tit': self._clean_quotes(qtr_data.get('qm_ep_tit', '')),
             'qm_sea_yr': qtr_data.get('qm_sea_yr', ''),
             'qm_air': self._normalize_date(qtr_data.get('qm_air', '')),
             'qm_src': self._normalize_source(qtr_data.get('qm_src', '')),
@@ -352,16 +480,17 @@ class NFOGenerator:
             'qm_aud_sr': qtr_data.get('qm_aud_sr', ''),
             'qm_aud_br': self._normalize_bitrate(qtr_data.get('qm_aud_br', '')),
             'am_aud_br': self._normalize_bitrate(qtr_data.get('am_aud_br', '')),
-            'qm_dur': qtr_data.get('qm_dur', ''),
+            'qm_dur': self._convert_seconds_to_minutes(qtr_data.get('qm_dur', '')),
             'qm_lan': self._normalize_language(qtr_data.get('qm_lan', '')),
             'qm_sub': self._normalize_subtitles(qtr_data.get('qm_sub', '')),
             'qm_size': self._normalize_file_size(qtr_data.get('qm_size', '')),
+            'qm_total_size': total_size,  # Total size of all episodes
             'qm_container': self._get_container_format(file_path),
             'qm_release_date': datetime.now().strftime('%B %d, %Y'),
             'qm_net': qtr_data.get('qm_net', ''),
             'qm_genre': qtr_data.get('qm_genre', ''),
             'qm_rat': qtr_data.get('qm_rat', ''),
-            'qm_cast': qtr_data.get('qm_cast', ''),
+            'qm_cast': self._clean_quotes(qtr_data.get('qm_cast', '')),
             'qm_imdb': qtr_data.get('qm_imdb', ''),
             'qm_tmdb': qtr_data.get('qm_tmdb', ''),
             'qm_maze': qtr_data.get('qm_maze', ''),
@@ -377,7 +506,13 @@ class NFOGenerator:
         }
         
         # Clean null/empty values
-        return {k: (v if v is not None and str(v).strip() else '') for k, v in data.items()}
+        cleaned_data = {k: (v if v is not None and str(v).strip() else '') for k, v in data.items()}
+        
+        # Debug log the cleaned data
+        self.logger.debug(f"Template data keys: {list(cleaned_data.keys())}")
+        self.logger.debug(f"qm_total_size value: {cleaned_data.get('qm_total_size', 'NOT FOUND')}")
+        
+        return cleaned_data
     
     def _generate_nfo_content(self, template_data: Dict, template_type: str) -> str:
         template = self._load_template(template_type)
@@ -415,6 +550,20 @@ class NFOGenerator:
         return nfo_path, folder_path
     
     def _nfo_needs_update(self, nfo_path: Path, import_row: sqlite3.Row) -> bool:
+        # Force regeneration if NFO doesn't contain "Total Size:" (indicates old template)
+        if nfo_path.exists():
+            try:
+                nfo_content = nfo_path.read_text(encoding='utf-8')
+                if 'Total Size:' not in nfo_content:
+                    self.logger.info(f"Forcing NFO regeneration - missing Total Size: {nfo_path}")
+                    return True
+                if '"S0' in nfo_content:  # Check for quoted episode entries
+                    self.logger.info(f"Forcing NFO regeneration - has quoted episodes: {nfo_path}")
+                    return True
+            except Exception as e:
+                self.logger.warning(f"Could not read NFO for update check: {e}")
+                return True
+        
         if not nfo_path.exists():
             return True
         
