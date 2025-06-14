@@ -93,6 +93,7 @@
       "def_loc": "/Volumes/barbossa/upload/tor",
       "scn_loc": "/Volumes/barbossa/upload/scn",
       "tor_loc": "/Volumes/barbossa/upload/upl",
+      "utor_loc": "/Volumes/barbossa/upload/utor",
       "tracker": "Torrent Leech; https://tracker.torrentleech.org/a/d025d0f3398ffad2ab9eb52a79e9cc55"
     }
   },

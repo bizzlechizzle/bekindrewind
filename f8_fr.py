@@ -8,6 +8,7 @@ import sys
 import subprocess
 import fcntl
 import errno
+import shutil
 from pathlib import Path
 from collections import defaultdict
 
@@ -113,10 +114,11 @@ def create_nfo(path, series, season=None, episode=None, episodes=None):
     except OSError:
         return False
 
-def create_torrent(source_path, torrent_path, tracker_url):
-    """Create torrent file with file lock checking"""
+def create_torrent_dual(source_path, primary_path, secondary_path, tracker_url):
+    """Create torrent file and save to both locations"""
     source_path = Path(source_path)
-    torrent_path = Path(torrent_path)
+    primary_path = Path(primary_path)
+    secondary_path = Path(secondary_path)
     
     if not source_path.exists():
         logging.error(f"Source not found: {source_path}")
@@ -126,13 +128,14 @@ def create_torrent(source_path, torrent_path, tracker_url):
         logging.error(f"Files locked or inaccessible: {source_path}")
         return False
     
-    # Ensure torrent directory exists
-    torrent_path.parent.mkdir(parents=True, exist_ok=True)
+    # Ensure both directories exist
+    primary_path.parent.mkdir(parents=True, exist_ok=True)
+    secondary_path.parent.mkdir(parents=True, exist_ok=True)
     
     cmd = [
         'py3createtorrent',
-        '--threads', '1',  # Single thread to avoid resource conflicts
-        '-o', str(torrent_path),
+        '--threads', '1',
+        '-o', str(primary_path),
         str(source_path)
     ]
     
@@ -140,7 +143,6 @@ def create_torrent(source_path, torrent_path, tracker_url):
         cmd.extend(['-t', tracker_url])
     
     try:
-        # Run with reduced priority and timeout
         result = subprocess.run(
             cmd,
             capture_output=True,
@@ -150,8 +152,14 @@ def create_torrent(source_path, torrent_path, tracker_url):
         )
         
         if result.returncode == 0:
-            logging.info(f"Created: {torrent_path}")
-            return True
+            # Copy to secondary location
+            try:
+                shutil.copy2(primary_path, secondary_path)
+                logging.info(f"Created: {primary_path} and {secondary_path}")
+                return True
+            except Exception as e:
+                logging.error(f"Copy failed: {e}")
+                return False
         else:
             logging.error(f"Torrent failed: {result.stderr}")
             return False
@@ -167,6 +175,7 @@ def process_torrents(data, config):
     """Process all torrent creation tasks"""
     tracker_url = config['user_input']['default']['tracker'].split(';')[1].strip()
     tor_loc = Path(config['user_input']['default']['tor_loc'])
+    utor_loc = Path(config['user_input']['default']['utor_loc'])
     
     # Group data by series and torrent type
     groups = defaultdict(lambda: defaultdict(list))
@@ -185,10 +194,11 @@ def process_torrents(data, config):
                 for episode in episodes:
                     ep_path = Path(episode['it_file_loc'])
                     ep_dir = ep_path.parent
-                    torrent_path = tor_loc / f"{ep_dir.name}.torrent"
+                    primary_torrent = tor_loc / f"{ep_dir.name}.torrent"
+                    secondary_torrent = utor_loc / f"{ep_dir.name}.torrent"
                     
                     logging.info(f"Processing episode: {ep_dir.name}")
-                    result = create_torrent(ep_dir, torrent_path, tracker_url)
+                    result = create_torrent_dual(ep_dir, primary_torrent, secondary_torrent, tracker_url)
                     results.append(result)
                     total_tasks += 1
                     
@@ -202,10 +212,11 @@ def process_torrents(data, config):
                     if len(season_eps) > 1:
                         # Multi-episode season torrent
                         season_path = Path(season_eps[0]['it_file_loc']).parent
-                        torrent_path = tor_loc / f"{season_path.name}.torrent"
+                        primary_torrent = tor_loc / f"{season_path.name}.torrent"
+                        secondary_torrent = utor_loc / f"{season_path.name}.torrent"
                         
                         logging.info(f"Processing season: {season_path.name}")
-                        result = create_torrent(season_path, torrent_path, tracker_url)
+                        result = create_torrent_dual(season_path, primary_torrent, secondary_torrent, tracker_url)
                         results.append(result)
                         total_tasks += 1
                     else:
@@ -213,30 +224,33 @@ def process_torrents(data, config):
                         episode = season_eps[0]
                         ep_path = Path(episode['it_file_loc'])
                         ep_dir = ep_path.parent
-                        torrent_path = tor_loc / f"{ep_dir.name}.torrent"
+                        primary_torrent = tor_loc / f"{ep_dir.name}.torrent"
+                        secondary_torrent = utor_loc / f"{ep_dir.name}.torrent"
                         
                         logging.info(f"Processing single episode: {ep_dir.name}")
-                        result = create_torrent(ep_dir, torrent_path, tracker_url)
+                        result = create_torrent_dual(ep_dir, primary_torrent, secondary_torrent, tracker_url)
                         results.append(result)
                         total_tasks += 1
                 
                 # Series torrent if multiple seasons
                 if len(seasons) > 1:
                     series_path = Path(episodes[0]['it_file_loc']).parent.parent
-                    torrent_path = tor_loc / f"{series_path.name}.torrent"
+                    primary_torrent = tor_loc / f"{series_path.name}.torrent"
+                    secondary_torrent = utor_loc / f"{series_path.name}.torrent"
                     
                     logging.info(f"Processing series: {series_path.name}")
-                    result = create_torrent(series_path, torrent_path, tracker_url)
+                    result = create_torrent_dual(series_path, primary_torrent, secondary_torrent, tracker_url)
                     results.append(result)
                     total_tasks += 1
                     
             else:
                 # Series torrent
                 series_path = Path(episodes[0]['it_file_loc']).parent.parent
-                torrent_path = tor_loc / f"{series_path.name}.torrent"
+                primary_torrent = tor_loc / f"{series_path.name}.torrent"
+                secondary_torrent = utor_loc / f"{series_path.name}.torrent"
                 
                 logging.info(f"Processing series: {series_path.name}")
-                result = create_torrent(series_path, torrent_path, tracker_url)
+                result = create_torrent_dual(series_path, primary_torrent, secondary_torrent, tracker_url)
                 results.append(result)
                 total_tasks += 1
     
@@ -267,7 +281,7 @@ def main():
     successful = sum(results)
     
     logging.info(f"Complete: {successful}/{total_tasks} successful")
-    print(f"Complete: {successful}/{total_tasks} torrents created")
+    print(f"Complete: {successful}/{total_tasks} torrents created in both locations")
 
 if __name__ == "__main__":
     main()
