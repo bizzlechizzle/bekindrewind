@@ -50,8 +50,8 @@ for path_str, kind in rows:
 
 # 6. Process each
 for kind, target in targets:
-    name         = target.name
-    torrent_tmp  = TOR_DIR / f"{name}.tmp.torrent"
+    name          = target.name
+    torrent_tmp   = TOR_DIR / f"{name}.tmp.torrent"
     torrent_final = TOR_DIR / f"{name}.torrent"
 
     # 6a. Calc piece-size exponent (√total, clamped)
@@ -77,13 +77,18 @@ for kind, target in targets:
     if not nfo:
         logging.warning(f"No .nfo found in {target}")
 
-    # 6d. Upload
+    # 6d. Upload — override the filename so it’s "<name>.torrent", not "<name>.tmp.torrent"
     try:
         with open(torrent_tmp, 'rb') as tf:
+            files = {
+                'torrent': (f"{name}.torrent", tf)
+            }
             resp = requests.post(
                 UPLOAD_URL,
-                data={'announcekey':announce_key,'category':CATEGORY[kind],'description':desc},
-                files={'torrent':tf}
+                data={'announcekey': announce_key,
+                      'category': CATEGORY[kind],
+                      'description': desc},
+                files=files
             )
         resp.raise_for_status()
         tid = resp.text.strip()
@@ -96,7 +101,7 @@ for kind, target in targets:
     try:
         dl = requests.post(
             DOWNLOAD_URL,
-            data={'announcekey':announce_key,'torrentID':tid}
+            data={'announcekey': announce_key, 'torrentID': tid}
         )
         dl.raise_for_status()
         torrent_final.write_bytes(dl.content)
@@ -105,7 +110,6 @@ for kind, target in targets:
         logging.error(f"Download error for {name}: {e}")
         continue
     finally:
-        # Clean up the temp torrent
         torrent_tmp.unlink(missing_ok=True)
 
     # 6f. Copy to utor directory (no deletions of media/.nfo)

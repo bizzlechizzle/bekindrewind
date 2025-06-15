@@ -5,3 +5,6 @@ danger2manifold.db-wal
 
 # ignore any log files
 *.log
+
+# ignore any mac files
+*.DS_Store
