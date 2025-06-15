@@ -1,287 +1,115 @@
 #!/usr/bin/env python3
-
-import sqlite3
 import json
-import logging
-import os
-import sys
+import sqlite3
+import math
 import subprocess
-import fcntl
-import errno
-import shutil
+import logging
+import requests
 from pathlib import Path
-from collections import defaultdict
 
-def setup_logging():
-    try:
-        with open('2jznoshit.json', 'r') as f:
-            log_enabled = json.load(f).get('f8_fr', {}).get('logs', False)
-    except:
-        log_enabled = False
-    
-    if log_enabled:
-        logging.basicConfig(
-            filename='f8_fr.log',
-            level=logging.DEBUG,
-            format='%(asctime)s - %(levelname)s - %(message)s',
-            filemode='a'
-        )
+# 1. Load config & set up file logging
+with open('2jznoshit.json') as f:
+    cfg = json.load(f)
+LOG_FILE = 'f8_fr.log'
+logging.basicConfig(
+    filename=LOG_FILE,
+    level=logging.DEBUG if cfg['f8_fr']['logs'] else logging.INFO,
+    format='%(asctime)s %(levelname)s: %(message)s'
+)
+
+# 2. Paths & tracker info
+loc = cfg['user_input']['default']
+TOR_DIR = Path(loc['tor_loc'])
+UTOR_DIR = Path(loc['utor_loc'])
+announce_url = loc['tracker'].split()[-1]
+announce_key = announce_url.rstrip('/').split('/')[-1]
+
+# 3. API endpoints and categories
+UPLOAD_URL   = 'https://www.torrentleech.org/torrents/upload/apiupload'
+DOWNLOAD_URL = 'https://www.torrentleech.org/torrents/upload/apidownload'
+CATEGORY     = {'series':'27','all':'27','season':'27','episode':'26'}  # :contentReference[oaicite:3]{index=3}
+
+# 4. Fetch targets from DB
+conn = sqlite3.connect('danger2manifold.db')
+cur  = conn.cursor()
+cur.execute("SELECT it_file_loc, it_torrent FROM import_tuner")
+rows = cur.fetchall()
+conn.close()
+
+# 5. Group into (kind, path)
+targets = set()
+for path_str, kind in rows:
+    p = Path(path_str)
+    if kind in ('series','all'):
+        targets.add(('series', p.parent.parent))
+    elif kind == 'season':
+        targets.add(('season', p.parent))
     else:
-        logging.disable(logging.CRITICAL)
+        targets.add(('episode', p))
 
-def load_config():
+# 6. Process each
+for kind, target in targets:
+    name = target.name
+    tmp_file = TOR_DIR / f"{name}.tmp.torrent"
+
+    # 6a. Calc piece-size exponent
+    total = sum(f.stat().st_size for f in target.rglob('*') if f.is_file())
+    exp = math.ceil(math.log2(total)/2) if total>0 else 18
+    exp = max(18, min(exp, 25))
+
+    # 6b. Create private V1 torrent
     try:
-        with open('2jznoshit.json', 'r') as f:
-            return json.load(f)
+        subprocess.run([
+            'mktorrent','-p','-l',str(exp),
+            '-a',announce_url,
+            '-o',str(tmp_file),
+            str(target)
+        ], check=True)
+    except subprocess.CalledProcessError as e:
+        logging.error(f"mktorrent failed ({e.returncode}): {' '.join(e.cmd)}")
+        continue
+
+    # 6c. Read .nfo if exists
+    nfo = next(target.glob('*.nfo'), None)
+    desc = nfo.read_text() if nfo else ''
+    if not nfo:
+        logging.warning(f"No .nfo in {target}")
+
+    # 6d. Upload
+    try:
+        with open(tmp_file,'rb') as tf:
+            resp = requests.post(
+                UPLOAD_URL,
+                data={'announcekey':announce_key,'category':CATEGORY[kind],'description':desc},
+                files={'torrent':tf}
+            )
+        resp.raise_for_status()
+        tid = resp.text.strip()
+        logging.info(f"Upload OK: {name} → ID {tid}")
     except Exception as e:
-        logging.error(f"Config load failed: {e}")
-        sys.exit(1)
+        logging.error(f"Upload error for {name}: {e}")
+        tmp_file.unlink(missing_ok=True)
+        continue
 
-def get_db_data():
-    if not os.path.exists("danger2manifold.db"):
-        logging.error("Database not found")
-        sys.exit(1)
-    
+    # 6e. Download final .torrent
     try:
-        with sqlite3.connect("danger2manifold.db") as conn:
-            conn.row_factory = sqlite3.Row
-            return [dict(row) for row in conn.execute("""
-                SELECT it_file_loc, it_torrent, it_series, it_sea_no, it_ep_no, 
-                       it_ep_title, it_checksum, file_name
-                FROM import_tuner 
-                WHERE it_file_loc IS NOT NULL AND it_file_loc != ''
-                ORDER BY it_series, it_sea_no, it_ep_no
-            """)]
-    except sqlite3.Error as e:
-        logging.error(f"Database error: {e}")
-        sys.exit(1)
-
-def check_file_unlocked(path):
-    """Check if file is locked by trying to open with exclusive lock"""
-    try:
-        with open(path, 'rb') as f:
-            fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
-        return True
-    except (OSError, IOError) as e:
-        if e.errno in (errno.EAGAIN, errno.EACCES):
-            return False
-        return True
-
-def wait_for_file_unlock(path, max_wait=30):
-    """Wait for file to become unlocked"""
-    import time
-    for _ in range(max_wait):
-        if check_file_unlocked(path):
-            return True
-        time.sleep(1)
-    return False
-
-def validate_path_access(source_path):
-    """Validate all files in path are accessible"""
-    if source_path.is_file():
-        return wait_for_file_unlock(source_path)
-    
-    for file_path in source_path.rglob('*'):
-        if file_path.is_file() and not wait_for_file_unlock(file_path, 5):
-            logging.warning(f"File locked: {file_path}")
-            return False
-    return True
-
-def create_nfo(path, series, season=None, episode=None, episodes=None):
-    """Create NFO file"""
-    content = [f"Series: {series}"]
-    
-    if episode:
-        content.extend([
-            f"Season: {episode.get('it_sea_no', 'Unknown')}",
-            f"Episode: {episode.get('it_ep_no', 'Unknown')} - {episode.get('it_ep_title', 'Unknown')}",
-            f"File: {episode.get('file_name', 'Unknown')}",
-            f"Checksum: {episode.get('it_checksum', 'Unknown')}"
-        ])
-    elif season:
-        content.extend([
-            f"Season: {season}",
-            f"Episodes: {len(episodes) if episodes else 'Unknown'}"
-        ])
-    else:
-        content.append("Complete Series Pack")
-    
-    try:
-        with open(path, 'w', encoding='utf-8') as f:
-            f.write('\n'.join(content) + '\n')
-        return True
-    except OSError:
-        return False
-
-def create_torrent_dual(source_path, primary_path, secondary_path, tracker_url):
-    """Create torrent file and save to both locations"""
-    source_path = Path(source_path)
-    primary_path = Path(primary_path)
-    secondary_path = Path(secondary_path)
-    
-    if not source_path.exists():
-        logging.error(f"Source not found: {source_path}")
-        return False
-    
-    if not validate_path_access(source_path):
-        logging.error(f"Files locked or inaccessible: {source_path}")
-        return False
-    
-    # Ensure both directories exist
-    primary_path.parent.mkdir(parents=True, exist_ok=True)
-    secondary_path.parent.mkdir(parents=True, exist_ok=True)
-    
-    cmd = [
-        'py3createtorrent',
-        '--threads', '1',
-        '-o', str(primary_path),
-        str(source_path)
-    ]
-    
-    if tracker_url:
-        cmd.extend(['-t', tracker_url])
-    
-    try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=300,
-            preexec_fn=lambda: os.nice(10) if hasattr(os, 'nice') else None
+        dl = requests.post(
+            DOWNLOAD_URL,
+            data={'announcekey':announce_key,'torrentID':tid}
         )
-        
-        if result.returncode == 0:
-            # Copy to secondary location
-            try:
-                shutil.copy2(primary_path, secondary_path)
-                logging.info(f"Created: {primary_path} and {secondary_path}")
-                return True
-            except Exception as e:
-                logging.error(f"Copy failed: {e}")
-                return False
-        else:
-            logging.error(f"Torrent failed: {result.stderr}")
-            return False
-            
-    except subprocess.TimeoutExpired:
-        logging.error(f"Timeout: {source_path}")
-        return False
+        dl.raise_for_status()
+        final = TOR_DIR / f"{name}.torrent"
+        final.write_bytes(dl.content)
+        logging.info(f"Downloaded final torrent for {name}")
     except Exception as e:
-        logging.error(f"Error: {e}")
-        return False
+        logging.error(f"Download error for {name}: {e}")
+        tmp_file.unlink(missing_ok=True)
+        continue
+    finally:
+        tmp_file.unlink(missing_ok=True)
 
-def process_torrents(data, config):
-    """Process all torrent creation tasks"""
-    tracker_url = config['user_input']['default']['tracker'].split(';')[1].strip()
-    tor_loc = Path(config['user_input']['default']['tor_loc'])
-    utor_loc = Path(config['user_input']['default']['utor_loc'])
-    
-    # Group data by series and torrent type
-    groups = defaultdict(lambda: defaultdict(list))
-    for item in data:
-        if Path(item['it_file_loc']).exists():
-            groups[item['it_torrent']][item['it_series']].append(item)
-    
-    results = []
-    total_tasks = 0
-    
-    for torrent_type, series_data in groups.items():
-        for series, episodes in series_data.items():
-            
-            if torrent_type == 'episode':
-                # Individual episode torrents
-                for episode in episodes:
-                    ep_path = Path(episode['it_file_loc'])
-                    ep_dir = ep_path.parent
-                    primary_torrent = tor_loc / f"{ep_dir.name}.torrent"
-                    secondary_torrent = utor_loc / f"{ep_dir.name}.torrent"
-                    
-                    logging.info(f"Processing episode: {ep_dir.name}")
-                    result = create_torrent_dual(ep_dir, primary_torrent, secondary_torrent, tracker_url)
-                    results.append(result)
-                    total_tasks += 1
-                    
-            elif torrent_type == 'season':
-                # Group episodes by season
-                seasons = defaultdict(list)
-                for ep in episodes:
-                    seasons[ep['it_sea_no']].append(ep)
-                
-                for season_num, season_eps in seasons.items():
-                    if len(season_eps) > 1:
-                        # Multi-episode season torrent
-                        season_path = Path(season_eps[0]['it_file_loc']).parent
-                        primary_torrent = tor_loc / f"{season_path.name}.torrent"
-                        secondary_torrent = utor_loc / f"{season_path.name}.torrent"
-                        
-                        logging.info(f"Processing season: {season_path.name}")
-                        result = create_torrent_dual(season_path, primary_torrent, secondary_torrent, tracker_url)
-                        results.append(result)
-                        total_tasks += 1
-                    else:
-                        # Single episode in season
-                        episode = season_eps[0]
-                        ep_path = Path(episode['it_file_loc'])
-                        ep_dir = ep_path.parent
-                        primary_torrent = tor_loc / f"{ep_dir.name}.torrent"
-                        secondary_torrent = utor_loc / f"{ep_dir.name}.torrent"
-                        
-                        logging.info(f"Processing single episode: {ep_dir.name}")
-                        result = create_torrent_dual(ep_dir, primary_torrent, secondary_torrent, tracker_url)
-                        results.append(result)
-                        total_tasks += 1
-                
-                # Series torrent if multiple seasons
-                if len(seasons) > 1:
-                    series_path = Path(episodes[0]['it_file_loc']).parent.parent
-                    primary_torrent = tor_loc / f"{series_path.name}.torrent"
-                    secondary_torrent = utor_loc / f"{series_path.name}.torrent"
-                    
-                    logging.info(f"Processing series: {series_path.name}")
-                    result = create_torrent_dual(series_path, primary_torrent, secondary_torrent, tracker_url)
-                    results.append(result)
-                    total_tasks += 1
-                    
-            else:
-                # Series torrent
-                series_path = Path(episodes[0]['it_file_loc']).parent.parent
-                primary_torrent = tor_loc / f"{series_path.name}.torrent"
-                secondary_torrent = utor_loc / f"{series_path.name}.torrent"
-                
-                logging.info(f"Processing series: {series_path.name}")
-                result = create_torrent_dual(series_path, primary_torrent, secondary_torrent, tracker_url)
-                results.append(result)
-                total_tasks += 1
-    
-    return results, total_tasks
-
-def main():
-    setup_logging()
-    logging.info("Starting f8_fr")
-    
-    # Validate py3createtorrent
+    # 6f. Mirror to utor_dir
     try:
-        subprocess.run(['py3createtorrent', '--version'], 
-                      capture_output=True, timeout=10, check=True)
-    except:
-        logging.error("py3createtorrent not available")
-        sys.exit(1)
-    
-    config = load_config()
-    data = get_db_data()
-    
-    if not data:
-        logging.error("No data found")
-        sys.exit(1)
-    
-    logging.info(f"Processing {len(data)} entries")
-    
-    results, total_tasks = process_torrents(data, config)
-    successful = sum(results)
-    
-    logging.info(f"Complete: {successful}/{total_tasks} successful")
-    print(f"Complete: {successful}/{total_tasks} torrents created in both locations")
-
-if __name__ == "__main__":
-    main()
+        (UTOR_DIR / final.name).write_bytes(final.read_bytes())
+    except Exception as e:
+        logging.error(f"Mirror error for {name}: {e}")

@@ -71,7 +71,7 @@
     "logs": false
   },
   "f8_fr": {
-    "logs": false 
+    "logs": true 
   },
   "release_group": {
     "full": "[pleaserewind]",
