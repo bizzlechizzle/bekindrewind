@@ -1,79 +1,50 @@
 #!/usr/bin/env python3
-"""
-API BOI - KISS data extraction from APIs
-Data priority: TVMaze > TMDb > TVDB > OMDb
-
-Usage: python api.py [-v]
-"""
 
 import argparse
 import json
 import re
 import requests
 import sqlite3
-import sys
 from pathlib import Path
 
-
-def get_script_dir():
-    """Get directory where script is located."""
-    return Path(__file__).parent
-
-
-def load_api_keys():
-    """Load API keys from user.json."""
-    config_path = get_script_dir().parent / "user.json"
-    try:
-        with open(config_path, 'r') as f:
-            config = json.load(f)
-        return config.get("API_KEYS", {})
-    except Exception:
-        return {}
-
+def get_config():
+    config_path = Path(__file__).parent.parent / "user.json"
+    with open(config_path, 'r') as f:
+        config = json.load(f)
+    return config.get('API_KEYS', {})
 
 def get_records():
-    """Get records from api table."""
-    db_path = get_script_dir().parent / "tapedeck.db"
-    try:
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-        cursor.execute("SELECT checksum, movie, series, season, episode FROM api")
-        records = cursor.fetchall()
+    db_path = Path(__file__).parent.parent / "tapedeck.db"
+    conn = sqlite3.connect(str(db_path))
+    cursor = conn.cursor()
+
+    # Check import table schema
+    cursor.execute("PRAGMA table_info(import)")
+    cols = {row[1] for row in cursor.fetchall()}
+
+    select_fields = ["checksum"]
+    if 'movie' in cols: select_fields.append("movie")
+    if 'series' in cols: select_fields.extend(["series", "season", "episode"])
+
+    if len(select_fields) == 1:  # Only checksum
         conn.close()
-        return records
-    except Exception:
-        return []
+        return [], cols
 
-
-def get_online_ids(checksum):
-    """Get API IDs from online table."""
-    db_path = get_script_dir().parent / "tapedeck.db"
-    try:
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-        cursor.execute("SELECT imdb, tmdb, tvmaze, tvdb FROM online WHERE checksum = ?", (checksum,))
-        result = cursor.fetchone()
-        conn.close()
-        if result:
-            return {'imdb': result[0], 'tmdb': result[1], 'tvmaze': result[2], 'tvdb': result[3]}
-    except Exception:
-        pass
-    return {}
-
+    cursor.execute(f"SELECT {', '.join(select_fields)} FROM import")
+    data = cursor.fetchall()
+    conn.close()
+    return data, cols
 
 def call_api(url):
-    """Simple API call."""
     try:
         response = requests.get(url, timeout=10)
         if response.status_code == 200:
             return response.json()
-    except Exception:
+    except:
         pass
     return None
 
-
 def search_tvmaze(series_name):
-    """Search TVMaze API."""
     if not series_name:
         return None
     clean_name = re.sub(r'[^\w\s]', '', series_name).strip()
@@ -83,211 +54,341 @@ def search_tvmaze(series_name):
         return result[0].get('show')
     return None
 
-
-def search_tmdb(series_name, movie_name, api_key):
-    """Search TMDb API."""
-    if not api_key:
+def search_tmdb(title, api_key, is_tv=True):
+    if not api_key or not title:
         return None
-
-    if series_name:
-        clean_name = re.sub(r'[^\w\s]', '', series_name).strip()
-        url = f"https://api.themoviedb.org/3/search/tv?api_key={api_key}&query={clean_name}"
-    elif movie_name:
-        clean_name = re.sub(r'[^\w\s]', '', movie_name).strip()
-        url = f"https://api.themoviedb.org/3/search/movie?api_key={api_key}&query={clean_name}"
-    else:
-        return None
-
+    clean_title = re.sub(r'[^\w\s]', '', title).strip()
+    endpoint = "tv" if is_tv else "movie"
+    url = f"https://api.themoviedb.org/3/search/{endpoint}?api_key={api_key}&query={clean_title}"
     result = call_api(url)
     if result and result.get('results'):
         return result['results'][0]
     return None
 
-
 def search_tvdb(series_name, api_key):
-    """Search TVDB API."""
     if not api_key or not series_name:
         return None
 
     # Get token first
     token_url = "https://api4.thetvdb.com/v4/login"
-    token_data = {"apikey": api_key}
     try:
-        response = requests.post(token_url, json=token_data, timeout=10)
-        if response.status_code == 200:
-            token = response.json().get('data', {}).get('token')
-            if token:
-                clean_name = re.sub(r'[^\w\s]', '', series_name).strip()
-                search_url = f"https://api4.thetvdb.com/v4/search?query={clean_name}"
-                headers = {"Authorization": f"Bearer {token}"}
-                search_response = requests.get(search_url, headers=headers, timeout=10)
-                if search_response.status_code == 200:
-                    search_result = search_response.json()
-                    if search_result.get('data'):
-                        return search_result['data'][0]
-    except Exception:
+        response = requests.post(token_url, json={"apikey": api_key}, timeout=10)
+        if response.status_code != 200:
+            return None
+        token = response.json().get('data', {}).get('token')
+        if not token:
+            return None
+
+        clean_name = re.sub(r'[^\w\s]', '', series_name).strip()
+        search_url = f"https://api4.thetvdb.com/v4/search?query={clean_name}"
+        headers = {"Authorization": f"Bearer {token}"}
+        search_response = requests.get(search_url, headers=headers, timeout=10)
+        if search_response.status_code == 200:
+            search_result = search_response.json()
+            if search_result.get('data'):
+                return search_result['data'][0]
+    except:
         pass
     return None
 
+def extract_field(field, tvdb_data, tvmaze_data, imdb_data, tmdb_data):
+    # Field-specific priority from instructions (lines 76-94)
 
-def search_omdb(imdb_id, api_key):
-    """Search OMDb API by IMDB ID."""
-    if not api_key or not imdb_id:
-        return None
-    url = f"http://www.omdbapi.com/?apikey={api_key}&i={imdb_id}"
-    return call_api(url)
+    if field == 'dmovie':
+        # Priority: online.py > ffprobe > TMDB > IMBD
+        if tmdb_data.get('overview'):
+            return tmdb_data['overview']
+        if imdb_data.get('Plot') and imdb_data['Plot'] != 'N/A':
+            return imdb_data['Plot']
 
+    elif field == 'dseries':
+        # Priority: online.py > TVDB > TVMAZE > IMBD > TMDB
+        if tvdb_data.get('overview'):
+            return tvdb_data['overview']
+        if tvmaze_data.get('summary'):
+            return re.sub(r'<[^>]+>', '', tvmaze_data['summary']).strip()
+        if imdb_data.get('Plot') and imdb_data['Plot'] != 'N/A':
+            return imdb_data['Plot']
+        if tmdb_data.get('overview'):
+            return tmdb_data['overview']
 
-def extract_data(api_data, source):
-    """Extract data from API response."""
-    data = {}
+    elif field == 'dseason':
+        # Priority: online.py > TVDB > TVMAZE > IMBD > TMDB
+        if tvdb_data.get('overview'):
+            return tvdb_data['overview']
+        if tvmaze_data.get('summary'):
+            return re.sub(r'<[^>]+>', '', tvmaze_data['summary']).strip()
 
-    if source == "tvmaze" and api_data:
-        if api_data.get('premiered'):
-            data['year'] = api_data['premiered'][:4]
-        if api_data.get('summary'):
-            data['dseries'] = re.sub(r'<[^>]+>', '', api_data['summary']).strip()
-        if api_data.get('network', {}).get('name'):
-            data['network'] = api_data['network']['name']
-        elif api_data.get('webChannel', {}).get('name'):
-            data['network'] = api_data['webChannel']['name']
-        if api_data.get('genres'):
-            data['genre'] = ', '.join(api_data['genres'])
+    elif field == 'depisode':
+        # Priority: online.py > ffprobe > TVDB > TVMAZE > IMBD > TMDB
+        if tvdb_data.get('overview'):
+            return tvdb_data['overview']
+        if tvmaze_data.get('summary'):
+            return re.sub(r'<[^>]+>', '', tvmaze_data['summary']).strip()
 
-    elif source == "tmdb" and api_data:
-        if api_data.get('first_air_date'):
-            data['year'] = api_data['first_air_date'][:4]
-            data['airdate'] = api_data['first_air_date']
-        elif api_data.get('release_date'):
-            data['year'] = api_data['release_date'][:4]
-            data['release'] = api_data['release_date']
-        if api_data.get('overview'):
-            if api_data.get('first_air_date'):
-                data['dseries'] = api_data['overview']
-            else:
-                data['dmovie'] = api_data['overview']
-        if api_data.get('networks') and len(api_data['networks']) > 0:
-            data['network'] = api_data['networks'][0]['name']
-        if api_data.get('genres'):
-            data['genre'] = ', '.join([g['name'] for g in api_data['genres']])
-        if api_data.get('poster_path'):
-            if api_data.get('first_air_date'):
-                data['iseries'] = f"https://image.tmdb.org/t/p/w500{api_data['poster_path']}"
-            else:
-                data['imovie'] = f"https://image.tmdb.org/t/p/w500{api_data['poster_path']}"
+    elif field == 'airdate':
+        # Priority: online.py > TVDB > TVMAZE > IMBD > TMDB
+        if tvdb_data.get('firstAired'):
+            return tvdb_data['firstAired']
+        if tvmaze_data.get('premiered'):
+            return tvmaze_data['premiered']
+        if tmdb_data.get('first_air_date'):
+            return tmdb_data['first_air_date']
 
-    elif source == "omdb" and api_data:
-        if api_data.get('Rated') and api_data['Rated'] != 'N/A':
-            data['rating'] = api_data['Rated']
-        if api_data.get('Actors'):
-            data['cast'] = api_data['Actors']
-        if api_data.get('Genre'):
-            data['genre'] = api_data['Genre']
+    elif field == 'network':
+        # Priority: online.py > TVDB > TVMAZE > IMBD > TMDB
+        if tvdb_data.get('primaryNetwork', {}).get('name'):
+            return tvdb_data['primaryNetwork']['name']
+        if tvmaze_data.get('network', {}).get('name'):
+            return tvmaze_data['network']['name']
+        elif tvmaze_data.get('webChannel', {}).get('name'):
+            return tvmaze_data['webChannel']['name']
+        if tmdb_data.get('networks') and tmdb_data['networks']:
+            return tmdb_data['networks'][0]['name']
 
-    return data
+    elif field == 'genre':
+        # Priority: TVDB > TVMAZE > IMBD > TMDB > online.py
+        if tvdb_data.get('genres') and tvdb_data['genres']:
+            return ', '.join([g['name'] for g in tvdb_data['genres']])
+        if tvmaze_data.get('genres'):
+            return ', '.join(tvmaze_data['genres'])
+        if imdb_data.get('Genre') and imdb_data['Genre'] != 'N/A':
+            return imdb_data['Genre']
+        if tmdb_data.get('genres'):
+            return ', '.join([g['name'] for g in tmdb_data['genres']])
 
+    elif field == 'rating':
+        # Priority: TVDB > TVMAZE > IMBD > TMDB > online.py
+        if tvdb_data.get('rating'):
+            return tvdb_data['rating']
+        if imdb_data.get('Rated') and imdb_data['Rated'] != 'N/A':
+            return imdb_data['Rated']
 
-def update_record(checksum, data):
-    """Update api table with extracted data."""
-    if not data:
-        return False
+    elif field == 'cast':
+        # Priority: TVDB > TVMAZE > IMBD > TMDB > online.py (limit to top 5)
+        if imdb_data.get('Actors') and imdb_data['Actors'] != 'N/A':
+            actors = imdb_data['Actors'].split(', ')
+            return ', '.join(actors[:5])
 
-    db_path = get_script_dir().parent / "tapedeck.db"
+    elif field == 'release':
+        # Priority: online.py > TMDB > IMBD
+        if tmdb_data.get('release_date'):
+            return tmdb_data['release_date']
+        if imdb_data.get('Released') and imdb_data['Released'] != 'N/A':
+            return imdb_data['Released']
+
+    elif field == 'studio':
+        # Priority: online.py > TMDB > IMBD
+        if tmdb_data.get('production_companies') and tmdb_data['production_companies']:
+            return tmdb_data['production_companies'][0]['name']
+
+    elif field == 'imovie':
+        # Priority: online.py > TMDB > IMBD
+        if tmdb_data.get('poster_path'):
+            return f"https://image.tmdb.org/t/p/w500{tmdb_data['poster_path']}"
+
+    elif field == 'iseries':
+        # Priority: online.py > TVDB > TVMAZE > IMBD > TMDB
+        if tvdb_data.get('image'):
+            return tvdb_data['image']
+        if tvmaze_data.get('image', {}).get('original'):
+            return tvmaze_data['image']['original']
+        if tmdb_data.get('poster_path'):
+            return f"https://image.tmdb.org/t/p/w500{tmdb_data['poster_path']}"
+
+    return None
+
+def get_api_ids(checksum):
+    """Check if online table already has API IDs for this checksum."""
+    db_path = Path(__file__).parent.parent / "tapedeck.db"
     try:
-        conn = sqlite3.connect(db_path)
+        conn = sqlite3.connect(str(db_path))
         cursor = conn.cursor()
-
-        # Build update query
-        fields = [f"{k} = ?" for k in data.keys()]
-        values = list(data.values()) + [checksum]
-
-        cursor.execute(f"UPDATE api SET {', '.join(fields)} WHERE checksum = ?", values)
-        success = cursor.rowcount > 0
-
-        conn.commit()
+        cursor.execute("SELECT imdb, tmdb, tvmaze, tvdb FROM online WHERE checksum = ?", (checksum,))
+        result = cursor.fetchone()
         conn.close()
-        return success
-    except Exception:
-        return False
+        if result:
+            return {'imdb': result[0], 'tmdb': result[1], 'tvmaze': result[2], 'tvdb': result[3]}
+    except:
+        pass
+    return {'imdb': None, 'tmdb': None, 'tvmaze': None, 'tvdb': None}
 
+def update_online_table(checksum, updates, api_ids):
+    """Update online table with metadata and API IDs."""
+    if not updates and not any(api_ids.values()):
+        return 0
 
-def process_record(checksum, movie, series, season, episode, api_keys, verbose=False):
-    """Process single record."""
-    online_ids = get_online_ids(checksum)
-    all_data = {}
+    db_path = Path(__file__).parent.parent / "tapedeck.db"
+    conn = sqlite3.connect(str(db_path))
+    cursor = conn.cursor()
 
-    # TVMaze (Priority 1) - TV shows only
-    if series and online_ids.get('tvmaze'):
-        tvmaze_data = call_api(f"https://api.tvmaze.com/shows/{online_ids['tvmaze']}")
-        data = extract_data(tvmaze_data, "tvmaze")
-        all_data.update(data)
+    # Build update query
+    all_updates = {}
+    all_updates.update(updates)
+    all_updates.update({k: v for k, v in api_ids.items() if v is not None})
 
-    # TMDb (Priority 2)
-    if online_ids.get('tmdb'):
-        if series:
-            tmdb_data = call_api(f"https://api.themoviedb.org/3/tv/{online_ids['tmdb']}?api_key={api_keys.get('TMDB', '')}")
-        elif movie:
-            tmdb_data = call_api(f"https://api.themoviedb.org/3/movie/{online_ids['tmdb']}?api_key={api_keys.get('TMDB', '')}")
-        else:
-            tmdb_data = None
+    if all_updates:
+        fields = ', '.join(f"{k} = ?" for k in all_updates.keys())
+        values = list(all_updates.values()) + [checksum]
+        cursor.execute(f"UPDATE online SET {fields} WHERE checksum = ?", values)
 
-        data = extract_data(tmdb_data, "tmdb")
-        # Only update if field doesn't exist (priority system)
-        for k, v in data.items():
-            if k not in all_data:
-                all_data[k] = v
+    conn.commit()
+    conn.close()
+    return len(updates)
 
-    # OMDb (Priority 4) - Only if we have IMDB ID
-    if online_ids.get('imdb') and api_keys.get('OMDB'):
-        omdb_data = search_omdb(online_ids['imdb'], api_keys['OMDB'])
-        data = extract_data(omdb_data, "omdb")
-        # Only update if field doesn't exist (priority system)
-        for k, v in data.items():
-            if k not in all_data:
-                all_data[k] = v
+def update_import_table(checksum, api_ids):
+    """Write API IDs back to import table (instructions lines 103-107)."""
+    if not any(api_ids.values()):
+        return
 
-    if all_data and update_record(checksum, all_data):
-        if verbose:
-            print(f"Updated: {movie or series} ({len(all_data)} fields)")
-        return len(all_data)
-    return 0
+    db_path = Path(__file__).parent.parent / "tapedeck.db"
+    conn = sqlite3.connect(str(db_path))
+    cursor = conn.cursor()
 
+    # Check what API ID columns exist in import table
+    cursor.execute("PRAGMA table_info(import)")
+    cols = {row[1] for row in cursor.fetchall()}
+
+    import_updates = {}
+    if 'imdb' in cols and api_ids['imdb']: import_updates['imdb'] = api_ids['imdb']
+    if 'tmdb' in cols and api_ids['tmdb']: import_updates['tmdb'] = api_ids['tmdb']
+    if 'tvmaze' in cols and api_ids['tvmaze']: import_updates['tvmaze'] = api_ids['tvmaze']
+    if 'tvdb' in cols and api_ids['tvdb']: import_updates['tvdb'] = api_ids['tvdb']
+
+    if import_updates:
+        fields = ', '.join(f"{k} = ?" for k in import_updates.keys())
+        values = list(import_updates.values()) + [checksum]
+        cursor.execute(f"UPDATE import SET {fields} WHERE checksum = ?", values)
+
+    conn.commit()
+    conn.close()
 
 def main():
-    """Main function."""
-    parser = argparse.ArgumentParser(description="API BOI - KISS data extraction")
-    parser.add_argument("-v", "--verbose", action="store_true", help="Verbose mode")
+    parser = argparse.ArgumentParser(description="API metadata import")
+    parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args()
 
-    api_keys = load_api_keys()
-    if not api_keys:
-        print("No API keys found")
-        return
+    api_keys = get_config()
+    records, import_cols = get_records()
 
-    records = get_records()
     if not records:
-        print("No records found")
+        print("No records found in import table")
         return
 
-    print(f"Processing {len(records)} records with MAXIMUM DATA EXTRACTION...")
+    if args.verbose:
+        print(f"Processing {len(records)} records from import table")
 
-    processed = 0
-    failed = 0
-    total_fields = 0
+    total_updated = 0
 
-    for checksum, movie, series, season, episode in records:
-        result = process_record(checksum, movie, series, season, episode, api_keys, args.verbose)
-        if result:
-            processed += 1
-            total_fields += result  # process_record should return field count
-        else:
-            failed += 1
+    for record in records:
+        checksum = record[0]
 
-    print("MAXIMUM EXTRACTION COMPLETE:")
-    print(f"  Processed: {processed}/{len(records)}")
-    print(f"  Failed: {failed}")
-    print(f"  Total Fields: {total_fields}")
+        # Parse record based on actual column order from select_fields
+        movie = None
+        series = None
 
+        if 'movie' in import_cols and len(record) > 1:
+            movie = record[1]
+        elif 'series' in import_cols and len(record) > 1:
+            series = record[1]
+
+        # Check existing API IDs in online table
+        existing_api_ids = get_api_ids(checksum)
+
+        # Search APIs to get new API IDs and data
+        new_api_ids = {'imdb': None, 'tmdb': None, 'tvmaze': None, 'tvdb': None}
+        tvdb_data = {}
+        tvmaze_data = {}
+        tmdb_data = {}
+        imdb_data = {}
+
+        # Use existing API IDs or search for new ones
+        final_api_ids = {}
+        for key in new_api_ids:
+            final_api_ids[key] = existing_api_ids[key] or new_api_ids[key]
+
+        # Search for missing API IDs only
+        if series:
+            if not final_api_ids['tvmaze']:
+                tvmaze_result = search_tvmaze(series)
+                if tvmaze_result:
+                    final_api_ids['tvmaze'] = tvmaze_result.get('id')
+                    tvmaze_data = tvmaze_result
+
+            if not final_api_ids['tmdb'] and api_keys.get('TMDB'):
+                tmdb_result = search_tmdb(series, api_keys['TMDB'], is_tv=True)
+                if tmdb_result:
+                    final_api_ids['tmdb'] = tmdb_result.get('id')
+                    tmdb_data = tmdb_result
+
+            if not final_api_ids['tvdb'] and api_keys.get('theTVDB'):
+                tvdb_result = search_tvdb(series, api_keys['theTVDB'])
+                if tvdb_result:
+                    final_api_ids['tvdb'] = tvdb_result.get('id')
+
+        elif movie:
+            if not final_api_ids['tmdb'] and api_keys.get('TMDB'):
+                tmdb_result = search_tmdb(movie, api_keys['TMDB'], is_tv=False)
+                if tmdb_result:
+                    final_api_ids['tmdb'] = tmdb_result.get('id')
+                    tmdb_data = tmdb_result
+
+        # Get metadata from APIs using existing or new IDs
+        if final_api_ids['tvmaze']:
+            if not tvmaze_data:
+                tvmaze_data = call_api(f"https://api.tvmaze.com/shows/{final_api_ids['tvmaze']}")
+
+        if final_api_ids['tmdb'] and api_keys.get('TMDB'):
+            if not tmdb_data:
+                endpoint = "tv" if series else "movie"
+                tmdb_data = call_api(f"https://api.themoviedb.org/3/{endpoint}/{final_api_ids['tmdb']}?api_key={api_keys['TMDB']}")
+
+        if final_api_ids['imdb'] and api_keys.get('OMDB'):
+            imdb_data = call_api(f"http://www.omdbapi.com/?apikey={api_keys['OMDB']}&i={final_api_ids['imdb']}")
+
+        # Extract metadata using field priorities
+        updates = {}
+
+        # Check current online table values to only fill empty columns
+        db_path = Path(__file__).parent.parent / "tapedeck.db"
+        try:
+            conn = sqlite3.connect(str(db_path))
+            cursor = conn.cursor()
+
+            all_fields = ['dmovie', 'release', 'studio', 'dseries', 'dseason', 'depisode',
+                         'airdate', 'network', 'genre', 'rating', 'cast', 'imovie', 'iseries']
+            cursor.execute("PRAGMA table_info(online)")
+            existing_cols = {row[1] for row in cursor.fetchall()}
+            available_fields = [f for f in all_fields if f in existing_cols]
+
+            if available_fields:
+                # Escape reserved words like 'cast'
+                escaped_fields = [f'"{field}"' for field in available_fields]
+                query = f"SELECT {', '.join(escaped_fields)} FROM online WHERE checksum = ?"
+                cursor.execute(query, (checksum,))
+                current = cursor.fetchone()
+
+                if current:
+                    for i, field in enumerate(available_fields):
+                        if current[i] is None or current[i] == '':
+                            value = extract_field(field, tvdb_data, tvmaze_data, imdb_data, tmdb_data)
+                            if value:
+                                updates[field] = value
+            conn.close()
+        except Exception as e:
+            pass
+
+        # Update tables
+        if updates or any(new_api_ids.values()):
+            updated_count = update_online_table(checksum, updates, final_api_ids)
+            update_import_table(checksum, final_api_ids)
+            total_updated += updated_count
+
+            if args.verbose:
+                title = movie or series or checksum
+                print(f"Updated {updated_count} fields for {title}")
+
+    print(f"Updated {total_updated} total fields")
 
 if __name__ == "__main__":
     main()

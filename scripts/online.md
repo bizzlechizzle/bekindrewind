@@ -1,20 +1,55 @@
 online.py
 
-Script Four
-Online Source Metadata Import
-online.py (what we are writing)
+Rules
 
-Arguments:
--v for verbose mode
+1. We are working with Python Scripts
+2. Scripts are universal and run on any OS.
+3. We always value code that is KISS, yet bulletproof, and verified with ULTRATHINK.
+4. We respect the text case of the original folders, online lookups, and API lookups.
+5. We follow common normalization for TORRENTING.
+6. We dont use emojis or leave un-needed comments.
+7. The terminal interface is KISS, nothing extra needed.
+8. the database is based on either movies or tv shows, check database.py for more information
+9. when troubleshootig check other scripts or .md to understand how they work
 
-Folder Layout
-bekindrewind.py
+Overview
+
+We do an ffmpeg dump, fill in the database, then do a media info dump for other/missing data for each 256 Checksum on the import table. We make sure all data is clean and normalized. 
+
+Database Name : tapedeck.db
+
+Folder Layout (for this and other scripts)
+autorewind.py
 tapedeck.db
 user.json
 scripts (folder)
 - import.py
-- database.py
-- media.py
+- database.py 
+- media.py 
+- online.py Rules
+
+1. We are working with Python Scripts
+2. Scripts are universal and run on any OS.
+3. We always value code that is KISS, yet bulletproof, and verified with ULTRATHINK.
+4. We respect the text case of the original folders, online lookups, and API lookups.
+5. We follow common normalization for TORRENTING.
+6. We dont use emojis or leave un-needed comments.
+7. The terminal interface is KISS, nothing extra needed.
+
+Overview
+
+We do a search for URLS on a log file, use playwright to check for rich media info on source url. log into database.
+
+Database Name : tapedeck.db
+
+Folder Layout (for this and other scripts)
+autorewind.py
+tapedeck.db
+user.json
+scripts (folder)
+- import.py
+- database.py 
+- media.py (this script)
 - online.py
 - api.py
 - prep.py
@@ -25,7 +60,11 @@ preferences(folder)
 - season.json
 - episode.json
 
-Uses different browsers, machine ids, etc for anti blocking measures.
+
+We use 3 different browers, with 3 different machine tops, for 9 possible browsers, plus standard anti-blocking meausres to download webpages.
+
+We scroll to the bottom of the web page. We click on any in-link mores, drop downs, etc on this page, looking for more information.
+
 
 Imports loglocation from user.json 
 loglocation: :/mnt/projects/downloads/streamfab/logs
@@ -46,9 +85,9 @@ We match import tab in tapedeck.db:
 Movies by Movie Name 
 
 We match Tv Shows:
-Verify Series, Season
+Verify Series, Season Number
 
-If we match tv show our total episode numbers for that season vs total episodes found on source url. If numbers match move on, if they dont then figure out what episode(s) is missing. If missing episodes print error missing episodes and then make a missingepisodes.txt that shows what episodes were found locally, what episode is missing, and keep it easy and give me the web URL again.
+If we match tv show our total episode numbers for that season vs total episodes found on source url. If numbers match move on, if they dont then figure out what episode(s) is missing. If missing episodes print error missing episodes and then make a missingepisodes.txt that shows what episodes were found locally, what episode is missing, and keep it easy and give me the web URL again in the file. This STOPS the entire process.
 
 Write the URL to import table - url - for each checksum
 
@@ -64,9 +103,41 @@ One C. Parsing Per Episode
 
 table - online
 
-rows  - checksums
+rows  - checksums (prefilled)
 
 columns - 
+
+dmovie (create only if -movie) (movie description)
+release (create only if -movie) (movie release date)
+studio (create only if -movie) (movie studio)
+dseries (create only if -tv) (series description)
+dseason (create only if -tv) (season description)
+depisode (create only if -tv) (episode description)
+airdate (create only if -tv) (original episode air date)
+network (create only if -tv) (original airing network)
+genre (genre(s) of move or tv show)
+rating (network/audince rating, tvma, tv-g, rated r, pg-13, unrated, etc)
+cast (limit to top 5 cast members)
+imovie (create only if -movie) (movie poster image)
+iseries (create only if -tv) (tv series poster/image)
+iseason (create only if -tv) (tv series season poster/image)
+iepisode (create only if -tv) (tv episode poster/image/screenshot)
+imdb (imbd number for tv show or movie)
+tmdb (the movie database  number for tv show or movie)
+tvmaze (create only if -tv) (tvmaze identifier to tv show)
+tvdb (create only if -tv) (tvdb identifier to tv show)
+
+
+
+
+
+
+
+
+
+
+
+
 
 checksum - imported from import table sha256 checksum
 movie: - movie title (create only if movie)
@@ -74,7 +145,7 @@ series: - series name (create only if tv show)
 season: - season number (create only if tv show)
 episode: - episode number (create only if tv show)
 title: - episode title (create only if tv show)
-sptitle: - special title (if available)(example extended edition, uncut, etc)
+stitle: - special title (if available)(example extended edition, uncut, etc)
 dmovie: - movie description (create only if movie)
 dseries: - series descriptione (create only if tv show)
 dseason: - season description (create only if tv show)
@@ -132,7 +203,9 @@ rt_ser_img- the source image URL for the series/season
 rt_ep_n - lists the total number of episodes found on source page
 rt_ep_a -  lists the all of the episodes found on source page for that season. “S02E01” Format 
 
-We ALWAYS prefer the data from Step 1 (playwright). In the description fields if there is multiple results from step 2 (because step 1 did not return any) we save the longer description. If the seasons and series description return the same result then save a different series option so we always have the most information as possible. We collect and combine multiple genres. Return null if there are no results found. For network we are looking for the original airing network. 
+
+
+
 HTML PARSING TRAINING:rt_series: (same for all “it_checksum” in that series)
 <h1 class="p-jAFk Qo+b2C" data-automation-id="title" elementtiming="dv-web-timing-atfVisible">Cheap Old Houses</h1>
 rt_sea (same for all “it_checksum” in that season)
