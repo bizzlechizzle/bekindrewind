@@ -1,0 +1,84 @@
+{
+  "template": [
+    "----------------------------------------------------------------",
+    "                    {import - series} - Season {import - season}",
+    "----------------------------------------------------------------",
+    "",
+    "{api - dseries,online - dseries (backup)}",
+
+     (link image to make embeded? ( import - iseries, or api - iseries (backup) ))
+
+
+    "",
+    "",
+    "Series Name : {import - series}",
+    "Season: {import - season}",
+    "Episodes : {import - total episodes included for season}",
+    "Year : {online - year, api - year (backup)}",
+    "Source : {filesource + Web Download}",
+    "Resolution : {import - Resolution}",
+    "HDR : {import - hdr}",
+    "Video Codec : {import - vcodec}",
+    "Audio Codec : {import - acodec}",
+    "Audio Channels : {import - achannels}",
+    "Release Date : {online - airdate (first date - last date)}",
+    "Release Group : {user - releasegroup}",
+    "",
+    "Network: {api - network, online - network (backup)}",
+    "Genre: {api - genre, online - genre (backup)}",
+    "Rating: {api - rating, online - network (rating)}",
+    "Cast: {api - cast, online - cast (backup)}",
+    "",
+    "IMDB: {rt_imdb}",
+    "TMDB: {rt_tmdb}",
+    "TVMAZE: {rt_maze}",
+    "THETVDB: {rt_tvdb}",
+    "",
+    "----------------------------------------------------------------",
+    "                    Episodes Included",
+    "----------------------------------------------------------------",
+    "",
+    "{online - dseason,api - dseason (backup)}",
+    "",
+    "{episodes included
+    S01E01 - (import - tile, online - title (backup))
+    S01E02 - (import - tile, online - title (backup))
+    S01E03 - (import - tile, online - title (backup))
+    etc,
+    }",
+    "",
+    "----------------------------------------------------------------",
+    "                    Technical Info",
+    "----------------------------------------------------------------",
+    "",
+    "Video",
+    "Codec : {import - vlevel}",
+    "Bitrate : {import - vbitrate}",
+    "",
+    "Audio",
+    "Sampling Rate : {import - asample}",
+    "Bitrate : {import - abitrate}",
+    "",
+    "Duration : {import - duration (average of season in full minutes)}",
+    "Container : {file type .mkv .mp4, etc import - filename (they are all the same, pick any file in season)}",
+    "Language : {import - language (update to full language name)}",
+    "Subtitles : {import - subtitle}",
+    "Total Size: {import - filesize (total size of all files in season)}",
+    "",
+    "----------------------------------------------------------------",
+    "                    Episode Details",
+    "----------------------------------------------------------------",
+    "",
+    "Episode 9 - Only the Good
+    Screenshot:
+    (link image to make embeded? ( import - iepisode, or api - iepisode (backup) ))
+    Air Date: (online - airdate, api - airdate (backup))
+    Duration: 42 minutes (import - duration)
+    Size: 3248 MB (import - filesize)
+    Description: (online - depisode, api - depisode (backup))
+    "",
+    "----------------------------------------------------------------",
+    "                    Be Kind, Rewind",
+    "----------------------------------------------------------------"
+  ]
+}
