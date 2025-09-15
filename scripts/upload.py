@@ -28,7 +28,7 @@ def get_uploads():
     cursor.execute("PRAGMA table_info(import)")
     cols = [row[1] for row in cursor.fetchall()]
 
-    cursor.execute("SELECT * FROM import WHERE newloc IS NOT NULL AND newloc != ''")
+    cursor.execute("SELECT * FROM import WHERE newloc IS NOT NULL AND newloc != '' AND uploaded IS NULL")
     records = cursor.fetchall()
     conn.close()
 
@@ -69,6 +69,14 @@ def create_torrent(folder_path, announce_url, output_path):
     except FileNotFoundError:
         print("mktorrent not found - install mktorrent")
         return False
+
+def mark_uploaded(data):
+    db_path = Path(__file__).parent.parent / "tapedeck.db"
+    conn = sqlite3.connect(str(db_path))
+    cursor = conn.cursor()
+    cursor.execute("UPDATE import SET uploaded = 1 WHERE checksum = ?", (data['checksum'],))
+    conn.commit()
+    conn.close()
 
 def get_category(torrent_type, is_hd=True):
     if 'movie' in torrent_type.lower():
@@ -166,6 +174,7 @@ def main():
             else:
                 if upload_torrent(temp_torrent, nfo_path, config, site_config, upload, args.verbose):
                     shutil.move(str(temp_torrent), str(final_torrent))
+                    mark_uploaded(upload['data'])
                     if args.verbose:
                         print(f"Successfully uploaded: {torrent_name}")
                 else:

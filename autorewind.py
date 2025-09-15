@@ -31,7 +31,7 @@ def main():
     args = parser.parse_args()
 
     scripts_dir = Path(__file__).parent / "scripts"
-    scripts = ["import.py", "media.py", "online.py", "api.py", "prep.py", "upload.py"]
+    scripts = ["import.py", "media.py", "online.py", "api.py", "prep.py", "upload.py", "cleanup.py"]
 
     for script_name in scripts:
         script_path = scripts_dir / script_name

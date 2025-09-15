@@ -24,7 +24,8 @@ scripts (folder)
 - online.py
 - api.py
 - prep.py
-- upload.py 
+- upload.py
+- cleanup.py
 preferences(folder)
 - torrentsites.json
 - sources.json
@@ -41,6 +42,7 @@ Run These Scripts in this order
 - api.py
 - prep.py
 - upload.py
+- cleanup.py
 
 Arguments
 -v verbose mode
