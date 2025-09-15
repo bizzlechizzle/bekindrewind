@@ -325,6 +325,7 @@ def main():
                 with open(fileflows_nfo_file, 'w') as f:
                     f.write(nfo_content)
 
+            db_path = Path(__file__).parent.parent / "tapedeck.db"
             conn = sqlite3.connect(str(db_path))
             cursor = conn.cursor()
 
