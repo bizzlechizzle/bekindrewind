@@ -14,9 +14,13 @@ def run_script(script_path, verbose=False):
         print(f"Running {script_path.name}...")
 
     try:
-        result = subprocess.run(cmd, capture_output=not verbose, text=True)
+        result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0:
-            print(f"Error running {script_path.name}: {result.stderr}")
+            print(f"Error running {script_path.name}")
+            if result.stderr:
+                print(result.stderr)
+            if result.stdout:
+                print(result.stdout)
             return False
         if verbose and result.stdout:
             print(result.stdout)

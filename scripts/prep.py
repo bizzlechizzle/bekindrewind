@@ -3,18 +3,32 @@
 import argparse
 import json
 import os
+import shutil
 import sqlite3
 from pathlib import Path
 
 def get_data():
     config_path = Path(__file__).parent.parent / "user.json"
+    if not config_path.exists():
+        print(f"Error: {config_path} not found")
+        return None, None, [], [], {}
+
     with open(config_path, 'r') as f:
         config = json.load(f)
 
     sources_path = Path(__file__).parent.parent / "preferences" / "sources.json"
+    if not sources_path.exists():
+        print(f"Error: {sources_path} not found")
+        return None, None, [], [], {}
+
     with open(sources_path, 'r') as f:
         sources = {k.lower(): v for k, v in json.load(f).items()}
+
     db_path = Path(__file__).parent.parent / "tapedeck.db"
+    if not db_path.exists():
+        print(f"Error: {db_path} not found")
+        return None, None, [], [], {}
+
     conn = sqlite3.connect(str(db_path))
     cursor = conn.cursor()
 
@@ -261,6 +275,9 @@ def main():
 
     config, sources, records, import_cols, online_data = get_data()
 
+    if config is None:
+        return
+
     if not records:
         print("No records found")
         return
@@ -275,22 +292,38 @@ def main():
             data = dict(zip(import_cols, record))
 
             if not Path(data['fileloc']).exists():
+                if args.verbose:
+                    print(f"Skipping missing file: {data['fileloc']}")
                 continue
 
             file_name, folder_name = make_name(record, import_cols, sources, config)
             folder_path = Path(upload_dir) / folder_name
-            folder_path.mkdir(parents=True, exist_ok=True)
+            try:
+                folder_path.mkdir(parents=True, exist_ok=True)
+            except (OSError, IOError) as e:
+                print(f"Error creating directory {folder_path}: {e}")
+                continue
 
             fileflows_folder_path = Path(fileflows_dir) / folder_name
-            fileflows_folder_path.mkdir(parents=True, exist_ok=True)
+            try:
+                fileflows_folder_path.mkdir(parents=True, exist_ok=True)
+            except (OSError, IOError) as e:
+                if args.verbose:
+                    print(f"Warning: Could not create fileflows directory {fileflows_folder_path}: {e}")
 
             new_file_path = folder_path / file_name
             fileflows_file_path = fileflows_folder_path / file_name
 
             if not new_file_path.exists():
-                os.link(data['fileloc'], new_file_path)
+                try:
+                    os.link(data['fileloc'], new_file_path)
+                except (OSError, IOError):
+                    shutil.copy2(data['fileloc'], new_file_path)
             if not fileflows_file_path.exists():
-                os.link(data['fileloc'], fileflows_file_path)
+                try:
+                    os.link(data['fileloc'], fileflows_file_path)
+                except (OSError, IOError):
+                    shutil.copy2(data['fileloc'], fileflows_file_path)
 
             db_path = Path(__file__).parent.parent / "tapedeck.db"
             conn = sqlite3.connect(str(db_path))
@@ -316,10 +349,18 @@ def main():
             _, folder_name = make_name(first_record, import_cols, sources, config)
 
             folder_path = Path(upload_dir) / folder_name
-            folder_path.mkdir(parents=True, exist_ok=True)
+            try:
+                folder_path.mkdir(parents=True, exist_ok=True)
+            except (OSError, IOError) as e:
+                print(f"Error creating directory {folder_path}: {e}")
+                continue
 
             fileflows_folder_path = Path(fileflows_dir) / folder_name
-            fileflows_folder_path.mkdir(parents=True, exist_ok=True)
+            try:
+                fileflows_folder_path.mkdir(parents=True, exist_ok=True)
+            except (OSError, IOError) as e:
+                if args.verbose:
+                    print(f"Warning: Could not create fileflows directory {fileflows_folder_path}: {e}")
 
             nfo_content = create_nfo(group_records, import_cols, online_data, config)
             if nfo_content:
@@ -339,6 +380,8 @@ def main():
                 data = dict(zip(import_cols, record))
 
                 if not Path(data['fileloc']).exists():
+                    if args.verbose:
+                        print(f"Skipping missing file: {data['fileloc']}")
                     continue
 
                 file_name, _ = make_name(record, import_cols, sources, config)
@@ -346,9 +389,15 @@ def main():
                 fileflows_file_path = fileflows_folder_path / file_name
 
                 if not new_file_path.exists():
-                    os.link(data['fileloc'], new_file_path)
+                    try:
+                        os.link(data['fileloc'], new_file_path)
+                    except (OSError, IOError):
+                        shutil.copy2(data['fileloc'], new_file_path)
                 if not fileflows_file_path.exists():
-                    os.link(data['fileloc'], fileflows_file_path)
+                    try:
+                        os.link(data['fileloc'], fileflows_file_path)
+                    except (OSError, IOError):
+                        shutil.copy2(data['fileloc'], fileflows_file_path)
 
                 video_path = Path(data['fileloc'])
                 for sub_file in video_path.parent.glob(f"{video_path.stem}.*"):
@@ -360,9 +409,15 @@ def main():
                         sub_dst = folder_path / sub_name
                         fileflows_sub_dst = fileflows_folder_path / sub_name
                         if not sub_dst.exists():
-                            os.link(sub_file, sub_dst)
+                            try:
+                                os.link(sub_file, sub_dst)
+                            except (OSError, IOError):
+                                shutil.copy2(sub_file, sub_dst)
                         if not fileflows_sub_dst.exists():
-                            os.link(sub_file, fileflows_sub_dst)
+                            try:
+                                os.link(sub_file, fileflows_sub_dst)
+                            except (OSError, IOError):
+                                shutil.copy2(sub_file, fileflows_sub_dst)
 
                 cursor.execute("UPDATE import SET newloc = ? WHERE checksum = ?", (str(new_file_path), checksum))
 
