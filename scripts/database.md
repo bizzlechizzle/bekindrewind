@@ -16,7 +16,7 @@ Rules
 
 Overview
 
-This script builds an empty SQLite DB. If there’s an old database, FUCKING delete it FOREVER. The databases are conditional in generation and ran with an argument on if it is a tvshow or a movie. The descriptions are for reference only and do not go into the database. We do not expect any specific value types, this is a blank clean, simple database. 
+This script builds an empty SQLite DB. If there's an old database, FUCKING delete it FOREVER. The database now creates a unified schema with ALL columns for both movies and TV shows, regardless of flags. This prevents script failures when columns don't exist. The descriptions are for reference only and do not go into the database. We do not expect any specific value types, this is a blank clean, simple database. 
 
 
 Database Name : tapedeck.db
@@ -44,8 +44,8 @@ preferences(folder)
 
 arguments
 -v = verbose mode
--movie = movie
--tv = tv show
+-movie = legacy flag (now creates unified schema with all columns)
+-tv = legacy flag (now creates unified schema with all columns)
 
 
 Database
@@ -54,14 +54,14 @@ table - import
 
 rows  - empty
 
-columns -
+columns - (ALL columns always created for unified schema)
 
 checksum
-movie (create only if -movie)
-series (create only if -tv)
-season (create only if -tv)
-episode (create only if -tv)
-title (create only if -tv)
+movie
+series
+season
+episode
+title
 stitle
 resolution
 hdr
@@ -84,31 +84,32 @@ dlsource
 torrentsite
 torrenttype
 url
+uploaded
 
 
 table - online
 
 rows  - empty
 
-columns - 
+columns - (ALL columns always created for unified schema)
 
 checksum
-dmovie (create only if -movie)
-release (create only if -movie)
-studio (create only if -movie)
-dseries (create only if -tv)
-dseason (create only if -tv)
-depisode (create only if -tv)
-airdate (create only if -tv)
-network (create only if -tv)
+dmovie
+release
+studio
+dseries
+dseason
+depisode
+airdate
+network
 genre
 rating
 cast
-imovie (create only if -movie)
-iseries (create only if -tv)
-iseason (create only if -tv)
-iepisode (create only if -tv)
+imovie
+iseries
+iseason
+iepisode
 imdb
 tmdb
-tvmaze (create only if -tv)
-tvdb (create only if -tv)
+tvmaze
+tvdb

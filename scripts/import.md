@@ -15,9 +15,9 @@ Rules
 
 Overview
 
-We use guess-it to determine if we are working with a tv show or a movie. Once determined we run database.py with the correct arguments (“-movie = movie or -tv = tv show). Database.py always generates a clean SQ3Lite database (tapedeck.db). Once the database is created we run a 256 checksum on each video file and log that in the import table. Log in the Movie Name (and stitle if applicable) or Tv Show name (series, season, episode (title,stitle if applicable) and then the file name (import -filename), file location (import - fileloc), and online file source (the folder the files were found in if applicable (Amazon, Youtube, HBO, etc) (import - filesource). Once complete we copy all of the checksums to the corresponding checksum in each other table with a checksum column. 
+We use guess-it to determine if we are working with a tv show or a movie. We run database.py to generate a unified schema SQLite database (tapedeck.db) that supports both movies and TV shows. Once the database is created we run a SHA-256 checksum on each video file and log that in the import table. Log in the Movie Name (and stitle if applicable) or TV Show name (series, season, episode, title, stitle if applicable) and then the file name (import - filename), file location (import - fileloc), and online file source (the folder the files were found in if applicable (Amazon, Youtube, HBO, etc) (import - dlsource). Once complete we copy all of the checksums to the corresponding checksum in each other table with a checksum column. 
 
-THIS SCRIPT DOES NOT VERIFY ANYTHING WITH database.py SO WE CAN UPDATE THAT INDEPENDATNLY. WE ONLY LAUNCH database.py
+THIS SCRIPT DOES NOT VERIFY ANYTHING WITH database.py SO WE CAN UPDATE THAT INDEPENDENTLY. WE ONLY LAUNCH database.py
 
 Folder Layout (for this and other scripts)
 autorewind.py
@@ -40,17 +40,17 @@ preferences(folder)
 
 database.py arguments
 -v = verbose mode
--movie = force movie database (and “torrent type”)
--tv = force tv show
+-movie = legacy flag (now creates unified schema with all columns)
+-tv = legacy flag (now creates unified schema with all columns)
 
 
 import.py arguments
 -loc = different file location than default (new location follows command)
 -site = different torrent site (new site follows command)
 -movie = movie torrenttype
--series = season torrenttype
+-series = series torrenttype
 -season = season torrenttype
--episode = season torrenttype
+-episode = episode torrenttype
 
 
 We open user.json to check for default file location (default “filelocation”) unless argument -loc is ran.
@@ -60,5 +60,5 @@ We open user.json to check for default torrent type (default “torrenttype”) 
 
 Can handle paths like /Volumes/The\ Iron\ Giant/Archive/Business/Wedding\ Films/2026/5\:26\ -\ Colby\ \&\ Parker/Save\ The\ Date/Highres.mov 
 
-import.py DOES NOT FILL anything othen than the checksum on online table
+import.py DOES NOT FILL anything other than the checksum on online table
 

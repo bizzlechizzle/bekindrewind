@@ -46,43 +46,54 @@ def scan_videos(directory):
             if p.is_file() and p.suffix.lower() in video_exts]
 
 
+def extract_media_info(guess):
+    """KISS: Extract media info from guessit result."""
+    if guess.get('type') == 'movie':
+        return {
+            'movie': guess.get('title', 'Unknown'),
+            'stitle': guess.get('edition'),
+            'is_movie': True
+        }
+    else:
+        return {
+            'series': guess.get('title', 'Unknown'),
+            'season': guess.get('season'),
+            'episode': guess.get('episode'),
+            'title': guess.get('episode_title'),
+            'stitle': guess.get('edition'),
+            'is_movie': False
+        }
+
+def process_single_file(file_path, torrent_site, torrent_type, verbose):
+    """KISS: Process single video file."""
+    if verbose:
+        print(f"Processing: {file_path.name}")
+
+    checksum = get_checksum(file_path)
+    guess = guessit(str(file_path.name))
+    dlsource = extract_filesource(file_path)
+
+    entry = {
+        'checksum': checksum,
+        'filename': file_path.name,
+        'fileloc': str(file_path),
+        'dlsource': dlsource,
+        'torrentsite': torrent_site,
+        'torrenttype': torrent_type
+    }
+
+    # Add media-specific info
+    entry.update(extract_media_info(guess))
+    return entry
+
 def process_files(files, torrent_site, torrent_type, verbose):
     """Process video files and extract data per import.md instructions."""
     data = []
 
     for file_path in files:
-        if verbose:
-            print(f"Processing: {file_path.name}")
-
         try:
-            checksum = get_checksum(file_path)
-            guess = guessit(str(file_path.name))
-            dlsource = extract_filesource(file_path)
-
-            entry = {
-                'checksum': checksum,
-                'filename': file_path.name,
-                'fileloc': str(file_path),
-                'dlsource': dlsource,
-                'torrentsite': torrent_site,
-                'torrenttype': torrent_type
-            }
-
-            # Set movie or TV data per instructions
-            if guess.get('type') == 'movie':
-                entry['movie'] = guess.get('title', 'Unknown')
-                entry['stitle'] = guess.get('edition')
-                entry['is_movie'] = True
-            else:
-                entry['series'] = guess.get('title', 'Unknown')
-                entry['season'] = guess.get('season')
-                entry['episode'] = guess.get('episode')
-                entry['title'] = guess.get('episode_title')
-                entry['stitle'] = guess.get('edition')
-                entry['is_movie'] = False
-
+            entry = process_single_file(file_path, torrent_site, torrent_type, verbose)
             data.append(entry)
-
         except Exception as e:
             print(f"Error processing {file_path.name}: {e}")
             continue
@@ -90,65 +101,45 @@ def process_files(files, torrent_site, torrent_type, verbose):
     return data
 
 
-def create_database(has_movies, has_tv, verbose):
-    """Run database.py to create clean database."""
+def create_database(verbose):
+    """Run database.py to create unified schema database."""
     script_dir = Path(__file__).parent
-    cmd = [sys.executable, str(script_dir / "database.py")]
+    cmd = [sys.executable, str(script_dir / "database.py"), "-tv"]  # -tv creates unified schema
 
     if verbose:
         cmd.append("-v")
-    if has_movies:
-        cmd.append("-movie")
-    if has_tv:
-        cmd.append("-tv")
 
     subprocess.run(cmd, check=True)
 
 
 def insert_data(data, verbose):
-    """Insert data into import table and copy checksums to other tables."""
+    """Insert data into import table and copy checksums to online table."""
     script_dir = Path(__file__).parent
     db_path = script_dir.parent / "tapedeck.db"
 
     conn = sqlite3.connect(str(db_path))
     cursor = conn.cursor()
 
-    # Check import table schema
-    cursor.execute("PRAGMA table_info(import)")
-    import_cols = {row[1] for row in cursor.fetchall()}
-
     for entry in data:
-        # Build insert for import table per import.md instructions
-        cols = ['checksum', 'filename', 'fileloc', 'torrentsite', 'torrenttype']
-        vals = [entry['checksum'], entry['filename'], entry['fileloc'],
-                entry['torrentsite'], entry['torrenttype']]
+        # KISS: Simplified insert with unified schema - all columns always exist
+        if entry['is_movie']:
+            cursor.execute("""INSERT OR REPLACE INTO import
+                             (checksum, movie, filename, fileloc, torrentsite, torrenttype, dlsource, stitle)
+                             VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                          (entry['checksum'], entry.get('movie'), entry['filename'],
+                           entry['fileloc'], entry['torrentsite'], entry['torrenttype'],
+                           entry.get('dlsource'), entry.get('stitle')))
+        else:
+            cursor.execute("""INSERT OR REPLACE INTO import
+                             (checksum, series, season, episode, title, filename, fileloc,
+                              torrentsite, torrenttype, dlsource, stitle)
+                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                          (entry['checksum'], entry.get('series'), entry.get('season'),
+                           entry.get('episode'), entry.get('title'), entry['filename'],
+                           entry['fileloc'], entry['torrentsite'], entry['torrenttype'],
+                           entry.get('dlsource'), entry.get('stitle')))
 
-        # Add conditional columns per instructions
-        if 'movie' in import_cols and entry['is_movie']:
-            cols.append('movie')
-            vals.append(entry['movie'])
-        if 'series' in import_cols and not entry['is_movie']:
-            cols.extend(['series', 'season', 'episode', 'title'])
-            vals.extend([entry['series'], entry['season'], entry['episode'], entry['title']])
-        if 'stitle' in import_cols and entry.get('stitle'):
-            cols.append('stitle')
-            vals.append(entry['stitle'])
-        if 'dlsource' in import_cols:
-            cols.append('dlsource')
-            vals.append(entry['dlsource'])
-
-        # Filter out columns that don't exist in schema
-        valid_cols = []
-        valid_vals = []
-        for col, val in zip(cols, vals):
-            if col in import_cols:
-                valid_cols.append(col)
-                valid_vals.append(val)
-
-        placeholders = ', '.join(['?'] * len(valid_vals))
-        cursor.execute(f"INSERT OR REPLACE INTO import ({', '.join(valid_cols)}) VALUES ({placeholders})", valid_vals)
-
-        # Copy checksum to other tables per instructions - ONLY CHECKSUM
+        # Copy checksum to online table per instructions - ONLY CHECKSUM
         cursor.execute("INSERT OR REPLACE INTO online (checksum) VALUES (?)", (entry['checksum'],))
 
         if verbose:
@@ -193,7 +184,7 @@ def main():
         print(f"Error: Location does not exist: {location}")
         sys.exit(1)
 
-    # Determine torrent type per instructions
+    # KISS: Simplified torrent type mapping
     if args.movie:
         torrent_type = "movie"
     elif args.series:
@@ -216,13 +207,9 @@ def main():
 
     data = process_files(video_files, torrent_site, torrent_type, args.verbose)
 
-    # Determine database type needed
-    has_movies = any(entry['is_movie'] for entry in data)
-    has_tv = any(not entry['is_movie'] for entry in data)
-
-    # Create database with correct schema
+    # Create unified schema database (KISS: no conditional logic needed)
     try:
-        create_database(has_movies, has_tv, args.verbose)
+        create_database(args.verbose)
     except subprocess.CalledProcessError as e:
         print(f"Error creating database: {e}")
         sys.exit(1)
