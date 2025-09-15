@@ -222,7 +222,7 @@ def create_nfo(records, import_cols, online_data, config):
                 total_size += float(size_str.replace(' MB', ''))
             elif 'GB' in size_str:
                 total_size += float(size_str.replace(' GB', '')) * 1024
-            elif size_str.replace('.', '').isdigit():
+            elif isinstance(size_str, str) and size_str.replace('.', '').isdigit():
                 total_size += float(size_str)
 
     if total_size > 0:
@@ -255,7 +255,7 @@ def create_nfo(records, import_cols, online_data, config):
             if size_str:
                 if 'MB' in size_str:
                     nfo.append(f'Size: {size_str}')
-                elif size_str.replace('.', '').isdigit():
+                elif isinstance(size_str, str) and size_str.replace('.', '').isdigit():
                     size = float(size_str)
                     nfo.append(f'Size: {size:.0f} MB')
 
