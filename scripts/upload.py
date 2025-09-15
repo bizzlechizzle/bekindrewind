@@ -28,7 +28,14 @@ def get_uploads():
     cursor.execute("PRAGMA table_info(import)")
     cols = [row[1] for row in cursor.fetchall()]
 
-    cursor.execute("SELECT * FROM import WHERE newloc IS NOT NULL AND newloc != '' AND uploaded IS NULL")
+    # Check if uploaded column exists, if not add it
+    cursor.execute("PRAGMA table_info(import)")
+    columns = [row[1] for row in cursor.fetchall()]
+    if 'uploaded' not in columns:
+        cursor.execute("ALTER TABLE import ADD COLUMN uploaded INTEGER")
+        conn.commit()
+
+    cursor.execute("SELECT * FROM import WHERE newloc IS NOT NULL AND newloc != '' AND (uploaded IS NULL OR uploaded = 0)")
     records = cursor.fetchall()
     conn.close()
 
