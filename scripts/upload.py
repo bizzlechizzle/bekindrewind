@@ -20,7 +20,7 @@ def get_torrent_sites():
     with open(sites_path, 'r') as f:
         return json.load(f)
 
-def get_uploads(config):
+def get_uploads():
     db_path = Path(__file__).parent.parent / "tapedeck.db"
     conn = sqlite3.connect(str(db_path))
     cursor = conn.cursor()
@@ -43,10 +43,6 @@ def get_uploads(config):
 
     is_movie = 'movie' in import_cols
     content_type = 'movies' if is_movie else 'tv_shows'
-    upload_dir = Path(config['locations']['file_upload'][content_type])
-
-    torrenttype = config['default']['torrenttype']
-    torrentsite = config['default']['torrentsite']
 
     for record in records:
         data = dict(zip(import_cols, record))
@@ -65,8 +61,8 @@ def get_uploads(config):
             'folder': folder_path,
             'folder_name': folder_path.name,
             'content_type': content_type,
-            'torrenttype': torrenttype,
-            'torrentsite': torrentsite,
+            'torrenttype': data.get('torrenttype', 'season'),
+            'torrentsite': data.get('torrentsite', 'torrentleech'),
             'imdb': online_data.get('imdb', ''),
             'tvmaze': online_data.get('tvmaze', ''),
             'checksums': [data['checksum']],
@@ -105,20 +101,23 @@ def mark_uploaded(checksums):
     conn.commit()
     conn.close()
 
-def get_category(torrent_type, is_movie=False):
+def get_category_from_config(torrent_type, is_movie, site_config):
+    category_mapping = site_config.get('category_mapping', {})
+    categories = site_config.get('categories', {})
+
     if is_movie:
-        return 37  # Movies :: WEBRip
-    elif torrent_type.lower() == 'episode':
-        return 32  # TV :: Episodes HD
+        category_key = category_mapping.get('movie', 'movies_webRip')
     else:
-        return 27  # TV :: BoxSets
+        category_key = category_mapping.get(torrent_type.lower(), 'tv_boxsets')
+
+    return categories.get(category_key, 37)
 
 def upload_torrent(torrent_path, nfo_path, config, site_config, upload_data, verbose=False):
     announce_key = config['torrent_sites']['torrentleech']['announcekey']
 
     data = {
         'announcekey': announce_key,
-        'category': get_category(upload_data['torrenttype'], upload_data['is_movie'])
+        'category': get_category_from_config(upload_data['torrenttype'], upload_data['is_movie'], site_config)
     }
 
     if upload_data.get('imdb'):
@@ -154,7 +153,7 @@ def main():
 
     config = get_config()
     torrent_sites = get_torrent_sites()
-    uploads = get_uploads(config)
+    uploads = get_uploads()
 
     if not uploads:
         print("No uploads found")
