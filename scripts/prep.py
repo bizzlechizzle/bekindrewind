@@ -40,43 +40,49 @@ def get_data():
 
 def make_name(record, import_cols, sources, config):
     data = dict(zip(import_cols, record))
-    source = sources.get(data['dlsource'].lower(), data['dlsource'])
+    source = sources.get(data.get('dlsource', '').lower(), data.get('dlsource', 'UNKNOWN'))
     group = config['default']['filereleasegroup']
     torrent_type = config['default']['torrenttype']
-    ext = Path(data['filename']).suffix
+    ext = Path(data.get('filename', '')).suffix or '.mkv'
+
+    resolution = data.get('resolution') or '1080p'
+    vcodec = (data.get('vcodec') or 'H264').upper()
+    acodec = (data.get('acodec') or 'EAC3').upper()
+    hdr = data.get('hdr') or 'SDR'
+    achannels = data.get('achannels') or 'stereo'
 
     if 'movie' in import_cols:
-        title = data['movie'].replace(' ', '.').replace('_', '.')
-        parts = [title, data['resolution'], source, data['vcodec'].upper(), data['acodec'].upper()]
-        if data['hdr'] and data['hdr'].upper() != 'SDR':
-            parts.insert(2, data['hdr'].upper())
-        if data['achannels'] in ['5.1', '7.1']:
-            parts.append(data['achannels'])
+        title = (data.get('movie') or 'Unknown').replace(' ', '.').replace('_', '.')
+        parts = [title, resolution, source, vcodec, acodec]
+        if hdr.upper() != 'SDR':
+            parts.insert(2, hdr.upper())
+        if achannels in ['5.1', '7.1']:
+            parts.append(achannels)
         base = '.'.join(parts)
         return f"{base}-{group}{ext}", f"{base}-{group}"
 
     else:
-        series = data['series'].replace(' ', '.').replace('_', '.')
-        season = f"S{data['season']:02d}"
+        series = (data.get('series') or 'Unknown').replace(' ', '.').replace('_', '.')
+        season = f"S{data.get('season', 1):02d}"
 
         if torrent_type == "episode":
-            episode = f"E{data['episode']:02d}"
-            parts = [series, f"{season}{episode}", data['resolution'], data['vcodec'].upper(), source, data['acodec'].upper()]
+            episode = f"E{data.get('episode', 1):02d}"
+            parts = [series, f"{season}{episode}", resolution, vcodec, source, acodec]
             folder_parts = parts.copy()
         else:
-            parts = [series, season, data['resolution'], data['vcodec'].upper(), source, data['acodec'].upper()]
+            parts = [series, season, resolution, vcodec, source, acodec]
             folder_parts = parts.copy()
-            episode = f"E{data['episode']:02d}"
-            parts = [series, f"{season}{episode}", data['resolution'], data['vcodec'].upper(), source, data['acodec'].upper()]
+            episode = f"E{data.get('episode', 1):02d}"
+            parts = [series, f"{season}{episode}", resolution, vcodec, source, acodec]
 
-        if data['hdr'] and data['hdr'].upper() != 'SDR':
-            parts.insert(2, data['hdr'].upper())
+        if hdr.upper() != 'SDR':
+            parts.insert(2, hdr.upper())
             if torrent_type != "episode":
-                folder_parts.insert(2, data['hdr'].upper())
-        if data['achannels'] in ['5.1', '7.1']:
-            parts.append(data['achannels'])
+                folder_parts.insert(2, hdr.upper())
+        if achannels in ['5.1', '7.1']:
+            parts.append(achannels)
             if torrent_type != "episode":
-                folder_parts.append(data['achannels'])
+                folder_parts.append(achannels)
 
         file_base = '.'.join(parts)
         if torrent_type == "episode":
