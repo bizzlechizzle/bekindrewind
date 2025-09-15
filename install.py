@@ -22,9 +22,16 @@ def main():
         sys.exit(1)
 
     print("Installing Python packages...")
-    if not run_cmd([sys.executable, "-m", "pip", "install", "-r", str(requirements)]):
-        print("Failed to install Python packages")
-        sys.exit(1)
+    pip_cmd = [sys.executable, "-m", "pip", "install", "-r", str(requirements)]
+
+    # Try normal install first
+    if not run_cmd(pip_cmd):
+        print("Normal pip install failed, trying with --break-system-packages...")
+        pip_cmd.append("--break-system-packages")
+        if not run_cmd(pip_cmd):
+            print("Failed to install Python packages")
+            print("Try: pip install -r requirements.txt --break-system-packages")
+            sys.exit(1)
 
     print("Installing Playwright browsers...")
     if not run_cmd([sys.executable, "-m", "playwright", "install"]):
