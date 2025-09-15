@@ -131,9 +131,9 @@ def create_nfo(records, import_cols, online_data, config):
 
     nfo.append(f'Source : {first_record.get("dlsource", "Unknown")} Web Download')
     nfo.append(f'Resolution : {first_record.get("resolution", "Unknown")}')
-    nfo.append(f'Video Codec : {first_record.get("vcodec", "Unknown").upper()}')
-    nfo.append(f'Audio Codec : {first_record.get("acodec", "Unknown").upper()}')
-    nfo.append(f'Audio Channels : {first_record.get("achannels", "Unknown").title()}')
+    nfo.append(f'Video Codec : {(first_record.get("vcodec") or "Unknown").upper()}')
+    nfo.append(f'Audio Codec : {(first_record.get("acodec") or "Unknown").upper()}')
+    nfo.append(f'Audio Channels : {(first_record.get("achannels") or "Unknown").title()}')
 
     if online.get('airdate'):
         nfo.append(f'Release Date : {online["airdate"]}')
@@ -195,9 +195,9 @@ def create_nfo(records, import_cols, online_data, config):
     if first_record.get('duration'):
         nfo.append(f'Duration : {first_record["duration"]}')
     if first_record.get('language'):
-        nfo.append(f'Language : {first_record["language"].title()}')
+        nfo.append(f'Language : {(first_record.get("language") or "English").title()}')
     if first_record.get('subtitles'):
-        nfo.append(f'Subtitles : {first_record["subtitles"].title()}')
+        nfo.append(f'Subtitles : {(first_record.get("subtitles") or "None").title()}')
 
     total_size = 0
     for r in records:
