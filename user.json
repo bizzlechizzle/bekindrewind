@@ -31,12 +31,12 @@
       "movies": "/mnt/storage/uploads/torrents/upload/movies/"
     },
     "monitored_upload": {
-      "tv_shows": "/mnt/projects/downloads/torrents/tv shows/",
-      "movies": "/mnt/projects/downloads/torrents/moovies/"
+      "tv_shows": "/mnt/storage/uploads/torrents/tv shows/",
+      "movies": "/mnt/projects/uploads/torrents/movies/"
     },
     "fileflows": {
-      "tv_shows": "/mnt/projects/downloads/streamfab/logs/uploads/tv shows/",
-      "movies": "/mnt/projects/downloads/streamfab/logs/uploads/movies/"
+      "tv_shows": "/mnt/projects/downloads/streamfab/uploads/tv shows/",
+      "movies": "/mnt/projects/downloads/streamfab/uploads/movies/"
     }
   },
 
