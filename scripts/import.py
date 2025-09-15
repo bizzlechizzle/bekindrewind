@@ -25,11 +25,15 @@ def get_checksum(file_path):
 
 
 def extract_filesource(file_path):
-    """Extract online file source from path."""
+    """Extract online file source from path per import.md: the folder the files were found in if applicable (Amazon, Youtube, HBO, etc)."""
     parts = Path(file_path).parts
-    for i, part in enumerate(parts):
-        if part.lower() in ['videos', 'downloads'] and i + 1 < len(parts):
-            return parts[i + 1]
+    streaming_sources = ['amazon', 'youtube', 'hbo', 'max', 'netflix', 'hulu', 'disney', 'paramount', 'peacock', 'apple']
+
+    for part in parts:
+        part_lower = part.lower()
+        for source in streaming_sources:
+            if source in part_lower:
+                return part
     return "unknown"
 
 
@@ -53,13 +57,13 @@ def process_files(files, torrent_site, torrent_type, verbose):
         try:
             checksum = get_checksum(file_path)
             guess = guessit(str(file_path.name))
-            filesource = extract_filesource(file_path)
+            dlsource = extract_filesource(file_path)
 
             entry = {
                 'checksum': checksum,
                 'filename': file_path.name,
                 'fileloc': str(file_path),
-                'filesource': filesource,
+                'dlsource': dlsource,
                 'torrentsite': torrent_site,
                 'torrenttype': torrent_type
             }
@@ -131,7 +135,7 @@ def insert_data(data, verbose):
             vals.append(entry['stitle'])
         if 'dlsource' in import_cols:
             cols.append('dlsource')
-            vals.append(entry['filesource'])
+            vals.append(entry['dlsource'])
 
         # Filter out columns that don't exist in schema
         valid_cols = []
