@@ -7,52 +7,34 @@ from pathlib import Path
 
 
 def create_tables(cursor, is_movie, is_tv):
-    """Create tables with conditional columns per instructions."""
-
-    # Build import table columns
-    import_cols = ["checksum TEXT PRIMARY KEY"]
+    i = "checksum TEXT PRIMARY KEY"
     if is_movie:
-        import_cols.append("movie TEXT")
+        i += ",movie TEXT"
     if is_tv:
-        import_cols.extend(["series TEXT", "season INTEGER", "episode INTEGER", "title TEXT"])
+        i += ",series TEXT,season INTEGER,episode INTEGER,title TEXT"
+    i += ",stitle TEXT,resolution TEXT,hdr TEXT,vcodec TEXT,vacodec TEXT,vbitrate REAL,acodec TEXT,abitrate REAL,achannels TEXT,asample REAL,filesize REAL,duration TEXT,language TEXT,subtitles TEXT,filename TEXT,fileloc TEXT,newloc TEXT,dlsource TEXT,torrentsite TEXT,torrenttype TEXT,url TEXT"
 
-    import_cols.extend([
-        "stitle TEXT", "resolution TEXT", "hdr TEXT", "vcodec TEXT",
-        "vacodec TEXT", "vbitrate REAL", "acodec TEXT", "abitrate REAL",
-        "achannels TEXT", "asample REAL", "filesize REAL", "duration TEXT",
-        "language TEXT", "subtitles TEXT", "filename TEXT", "fileloc TEXT",
-        "newloc TEXT", "dlsource TEXT", "torrentsite TEXT", "torrenttype TEXT", "url TEXT"
-    ])
+    cursor.execute(f"CREATE TABLE import ({i})")
 
-    cursor.execute(f"CREATE TABLE import ({', '.join(import_cols)})")
-
-    # Build online table columns in correct order per instructions
-    online_cols = ["checksum TEXT PRIMARY KEY"]
+    o = "checksum TEXT PRIMARY KEY"
     if is_movie:
-        online_cols.extend(["dmovie TEXT", "release TEXT", "studio TEXT"])
+        o += ",dmovie TEXT,release TEXT,studio TEXT"
     if is_tv:
-        online_cols.extend([
-            "dseries TEXT", "dseason TEXT", "depisode TEXT", "airdate TEXT",
-            "network TEXT"
-        ])
-
-    online_cols.extend(["genre TEXT", "rating TEXT", "cast TEXT"])
-
+        o += ",dseries TEXT,dseason TEXT,depisode TEXT,airdate TEXT,network TEXT"
+    o += ",genre TEXT,rating TEXT,cast TEXT"
     if is_movie:
-        online_cols.append("imovie TEXT")
+        o += ",imovie TEXT"
     if is_tv:
-        online_cols.extend(["iseries TEXT", "iseason TEXT", "iepisode TEXT"])
-
-    online_cols.extend(["imdb TEXT", "tmdb TEXT"])
-
+        o += ",iseries TEXT,iseason TEXT,iepisode TEXT"
+    o += ",imdb TEXT,tmdb TEXT"
     if is_tv:
-        online_cols.extend(["tvmaze TEXT", "tvdb TEXT"])
+        o += ",tvmaze TEXT,tvdb TEXT"
 
-    cursor.execute(f"CREATE TABLE online ({', '.join(online_cols)})")
+    cursor.execute(f"CREATE TABLE online ({o})")
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Create SQLite database")
+    parser = argparse.ArgumentParser()
     parser.add_argument("-v", "--verbose", action="store_true")
     parser.add_argument("-movie", action="store_true")
     parser.add_argument("-tv", action="store_true")

@@ -146,12 +146,11 @@ def extract(file_path, ffmpeg, mediainfo):
     return d
 
 
-def get_desc(mediainfo):
-    """Get episode/movie descriptions."""
-    for pattern in [r'Title\s*:\s*(.+)', r'Movie name\s*:\s*(.+)', r'Description\s*:\s*(.+)']:
-        if m := re.search(pattern, mediainfo, re.I):
-            desc = m.group(1).strip()
-            if len(desc) > 10: return desc
+def get_desc(ffmpeg):
+    """Get episode/movie descriptions from ffmpeg per instructions."""
+    if m := re.search(r'DESCRIPTION\s*:\s*(.+)', ffmpeg):
+        desc = m.group(1).strip()
+        if len(desc) > 10: return desc
     return None
 
 
@@ -204,8 +203,8 @@ def main():
                           list(data.values()) + [checksum])
             if args.verbose: print(f"  Updated {len(data)} fields")
 
-        # Extract online table descriptions
-        desc = get_desc(mediainfo)
+        # Extract online table descriptions per instructions - from ffmpeg
+        desc = get_desc(ffmpeg)
         if desc:
             if movie:
                 cursor.execute("UPDATE online SET dmovie = ? WHERE checksum = ?", (desc, checksum))

@@ -6,7 +6,7 @@
     "",
     "{api - dseries,online - dseries (backup)}",
 
-     (link image to make embeded? ( import - iseries, or api - iseries (backup) ))
+     (link image to make embeded online? ( import - iseries, or api - iseries (backup) ))!!!!!!
 
 
     "",
@@ -69,9 +69,19 @@
     "                    Episode Details",
     "----------------------------------------------------------------",
     "",
-    "Episode 9 - Only the Good
+    "Episode 1 - Only the Good
     Screenshot:
-    (link image to make embeded? ( import - iepisode, or api - iepisode (backup) ))
+    (link image to make embeded? ( import - iepisode, or api - iepisode (backup) ))!!!!!!!
+    Air Date: (online - airdate, api - airdate (backup))
+    Duration: 42 minutes (import - duration)
+    Size: 3248 MB (import - filesize)
+    Description: (online - depisode, api - depisode (backup))
+    "",
+
+       "",
+    "Episode 2 - Only the Good
+    Screenshot:
+    (link image to make embeded? ( import - iepisode, or api - iepisode (backup) ))!!!!!!
     Air Date: (online - airdate, api - airdate (backup))
     Duration: 42 minutes (import - duration)
     Size: 3248 MB (import - filesize)

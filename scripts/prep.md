@@ -14,26 +14,27 @@ Rules
 
 Overview
 
-We figure out the new torrent friend name of each file, and then make a hardlink of it, to the "file_upload" location in the user.json create 
+We figure out the new torrent friend name of each file, and then make a hardlink of it, to the "file_upload" location in the user.json create and "fileflows" also located there.
  
 Once we have the new folders, names, and hard links update the new file location for each checksum (import - newloc)
 
 We check import - dlsource, then sources.json for correct term, Amazon = AMZN.WEB-DL for example
 
-We create .nfo files
+We create .nfo files - i have laid out a seriessample.json as a sample in the preferences folder, make one fully compliant with this script and save is as series.json . it needs to be fully updated. the images should show embeded online so i dont have to manully do screenshots. DO THE FULL BLOWN .NFO DONT BE LAZY. EMBEDED IMAGES CLEAN CLEAN CLEAN. for vbitrate use highest quality file. 
 
 
-Folder Layout
-bekindrewind.py
+
+Folder Layout 
+autorewind.py 
 tapedeck.db
 user.json
 scripts (folder)
 - import.py
-- database.py
+- database.py 
 - media.py
 - online.py
-- api.py 
-- prep.py (this script)
+- api.py
+- prep.py
 - upload.py 
 preferences(folder)
 - torrentsites.json
@@ -114,3 +115,4 @@ This.Old.House.S23E12.1080p.AMZN.WEB-DL.H264.EAC3.5.1-PLZRWD.srt
 
 .NFO - Ive made a sample series file. It should pull the data in and make clean .nfo files. We make it for the torrenttype, one for each season or the series. etc.
 
+update - lets not call them screen shots, lets have the images about each episode. 

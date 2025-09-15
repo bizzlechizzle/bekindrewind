@@ -12,23 +12,22 @@ Rules
 8. the database is based on either movies or tv shows, check database.py for more information
 9. when troubleshootig check other scripts or .md to understand how they work
 
+Arguments:
+-v : runs terminal in verbose mode
+-t : runs test mode, does not upload torrent
 
-Overview
+Test mode creates the torrent but does not upload it to the site. 
 
-We create torrents and upload them.
-
-Database Name : tapedeck.db
-
-Folder Layout
-bekindrewind.py
+Folder Layout 
+autorewind.py 
 tapedeck.db
 user.json
 scripts (folder)
 - import.py
-- database.py
+- database.py 
 - media.py
 - online.py
-- api.py 
+- api.py
 - prep.py
 - upload.py (this script)
 preferences(folder)
@@ -39,36 +38,10 @@ preferences(folder)
 - episode.json
 
 
-
-Arguments:
--v : runs terminal in verbose mode
--t : runs test mode, does not upload torrent
-
-Test mode creates the torrent but does not upload it to the site. 
-
-Folder Layout
-bekindrewind.py
-tapedeck.db
-user.json
-scripts (folder)
-- import.py
-- database.py
-- media.py
-- online.py
-- api.py
-- prep.py
-preferences(folder)
-- torrentsites.json
-- sources.json
-- series.json
-- season.json
-- episode.json
-
-
 Step One:
-load tapedeck.py (import - newloc) (import - torrenttype) (import - torrentsite)
+load tapedeck.py (import - newloc) (local - torrenttype) (local - torrentsite)
 load user.json (temp_torrent_upload) this is where the temporary torrent goes
-load user.json monitored_upload) this is where the new downloaded torrent goes that goes into a monitored folder for the torrent program to pick up
+load user.json montiroed_upload) this is where the new downloaded torrent goes that goes into a monitored folder for the torrent program to pick up
 
 
 Now we have the files, and how they should be in torrents. Make the torrent files. 

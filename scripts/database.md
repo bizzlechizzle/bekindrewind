@@ -16,23 +16,24 @@ Rules
 
 Overview
 
-This script builds an empty SQLite DB. If there’s an old database, delete it. The databases are conditional in generation and ran with an argument on if it is a tvshow or a movie. The descriptions are for reference only and do not go into the database. We do not expect any specific value types, this is a blank clean, simple database. 
+This script builds an empty SQLite DB. If there’s an old database, FUCKING delete it FOREVER. The databases are conditional in generation and ran with an argument on if it is a tvshow or a movie. The descriptions are for reference only and do not go into the database. We do not expect any specific value types, this is a blank clean, simple database. 
 
 
 Database Name : tapedeck.db
 
 
-Folder Layout (for this and other scripts)
-autorewind.py
+Folder Layout 
+autorewind.py 
 tapedeck.db
 user.json
 scripts (folder)
 - import.py
-- database.py (this script)
+- database.py 
 - media.py
 - online.py
 - api.py
 - prep.py
+- upload.py 
 preferences(folder)
 - torrentsites.json
 - sources.json

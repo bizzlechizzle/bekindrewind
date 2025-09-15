@@ -26,13 +26,17 @@
       "tv_shows": "/Users/bryant/Documents/fake/uploads/tv shows/",
       "movies": "/Users/bryant/Documents/fake/uploads/movies/"
     },
+    "temp_torrent_upload": {
+      "tv_shows": "/Users/bryant/Documents/fake/uploads/torrents/temp/tv shows/",
+      "movies": "/Users/bryant/Documents/fake/uploads/torrents/temp/movies/"
+    },
     "monitored_upload": {
       "tv_shows": "/Users/bryant/Documents/fake/uploads/torrents/tv shows/",
       "movies": "/Users/bryant/Documents/fake/uploads/torrents/movies/"
     },
-    "temp_torrent_upload": {
-      "tv_shows": "/Users/bryant/Documents/fake/uploads/torrents/temp/tv shows/",
-      "movies": "/Users/bryant/Documents/fake/uploads/torrents/temp/movies/"
+    "fileflows": {
+      "tv_shows": "/Users/bryant/Documents/fake/fileflows/tv shows/",
+      "movies": "/Users/bryant/Documents/fake/fileflows/torrents/movies/"
     }
   },
 
@@ -40,5 +44,11 @@
     "OMDB": "4d3ea197",
     "TMDB": "1d83e3b78d9298ded6e7aab21667e564",
     "theTVDB": "b93ead8c-3804-448e-99b3-0f6ea51b0b3f"
+  },
+
+  "torrent_sites": {
+    "torrentleech": {
+      "announcekey": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    }
   }
 }

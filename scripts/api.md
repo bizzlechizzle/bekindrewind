@@ -10,7 +10,7 @@ Rules
 6. We dont use emojis or leave un-needed comments.
 7. The terminal interface is KISS, nothing extra needed.
 8. the database is based on either movies or tv shows, check database.py for more information
-9. when troubleshootig check other scripts or .md to understand how they work
+9. when troubleshootig check other scripts or .md to understand how they work ONLY REFERENCE 
 
 
 Overview
@@ -88,10 +88,10 @@ network (create only if -tv) (original airing network) (info priority: online.py
 genre (genre(s) of movie or tv show) (TVDB>TVMAZE>IMBD>TMDB>online.py (source lookup))
 rating (network/audince rating, tvma, tv-g, rated r, pg-13, unrated, etc) (TVDB>TVMAZE>IMBD>TMDB>online.py (source lookup))
 cast (limit to top 5 cast members) (TVDB>TVMAZE>IMBD>TMDB>online.py (source lookup))
-imovie (create only if -movie) (movie poster image) (info priority: online.py (source lookup)>TMDB>IMBD)
-iseries (create only if -tv) (tv series poster/image) (info priority: online.py (source lookup)>TVDB>TVMAZE>IMBD>TMDB)
-iseason (create only if -tv) (tv series season poster/image) (info priority: online.py (source lookup)>TVDB>TVMAZE>IMBD>TMDB)
-iepisode (create only if -tv) (tv episode poster/image/screenshot) (info priority: online.py (source lookup)>TVDB>TVMAZE>IMBD>TMDB)
+imovie (create only if -movie) (movie poster image) (info priority: online.py (source lookup)>TMDB>IMBD) (KEEP ORIGIN SOURCE IMAGE: if existing image URL matches source domain like amazon.com for amazon source, preserve it)
+iseries (create only if -tv) (tv series poster/image) (info priority: online.py (source lookup)>TVDB>TVMAZE>IMBD>TMDB) (KEEP ORIGIN SOURCE IMAGE: if existing image URL matches source domain like amazon.com for amazon source, preserve it)
+iseason (create only if -tv) (tv series season poster/image) (info priority: online.py (source lookup)>TVDB>TVMAZE>IMBD>TMDB) (KEEP ORIGIN SOURCE IMAGE: if existing image URL matches source domain like amazon.com for amazon source, preserve it)
+iepisode (create only if -tv) (tv episode poster/image/screenshot) (info priority: online.py (source lookup)>TVDB>TVMAZE>IMBD>TMDB) (KEEP ORIGIN SOURCE IMAGE: if existing image URL matches source domain like amazon.com for amazon source, preserve it)
 imdb (imbd number for tv show or movie)
 tmdb (the movie database  number for tv show or movie)
 tvmaze (create only if -tv) (tvmaze identifier to tv show)
@@ -111,3 +111,13 @@ tvmaze: - tvmaze (create only if tv show)
 tvdb: - the tvdb number (create only if tv show)
 
 
+Add smart call so we dont have to have as many api calls, the dseries, network, genre, rating, will be the same for each series, dseason,cast will be the same for each season 
+
+I think the API numbers are the same for each season in a series, double check. 
+
+genres should be smart, and accept mulplit listings, or the api with the most listed
+
+use smart results always, thats why they are smart.
+
+> DO A BEST LOOK UP FOR EACH API TO DETERMINE WHICH ONES SHOULD GIVE THE BEST
+  SMART RESULTS 

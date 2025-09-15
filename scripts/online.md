@@ -10,7 +10,7 @@ Rules
 6. We dont use emojis or leave un-needed comments.
 7. The terminal interface is KISS, nothing extra needed.
 8. the database is based on either movies or tv shows, check database.py for more information
-9. when troubleshootig check other scripts or .md to understand how they work
+9. when troubleshootig check other scripts or .md to understand how they work ONLY REFERENCE 
 
 Overview
 
@@ -18,23 +18,6 @@ We do an ffmpeg dump, fill in the database, then do a media info dump for other/
 
 Database Name : tapedeck.db
 
-Folder Layout (for this and other scripts)
-autorewind.py
-tapedeck.db
-user.json
-scripts (folder)
-- import.py
-- database.py 
-- media.py 
-- online.py Rules
-
-1. We are working with Python Scripts
-2. Scripts are universal and run on any OS.
-3. We always value code that is KISS, yet bulletproof, and verified with ULTRATHINK.
-4. We respect the text case of the original folders, online lookups, and API lookups.
-5. We follow common normalization for TORRENTING.
-6. We dont use emojis or leave un-needed comments.
-7. The terminal interface is KISS, nothing extra needed.
 
 Overview
 
@@ -49,9 +32,9 @@ user.json
 scripts (folder)
 - import.py
 - database.py 
-- media.py (this script)
-- online.py
-- api.py
+- media.py 
+- online.py (this script)
+- api.py 
 - prep.py
 preferences(folder)
 - torrentsites.json
@@ -65,6 +48,7 @@ We use 3 different browers, with 3 different machine tops, for 9 possible browse
 
 We scroll to the bottom of the web page. We click on any in-link mores, drop downs, etc on this page, looking for more information.
 
+We only pull the URL onces per movie, or season. It is not typically a full series or a new link per episods.
 
 Imports loglocation from user.json 
 loglocation: :/mnt/projects/downloads/streamfab/logs
@@ -122,49 +106,16 @@ imovie (create only if -movie) (movie poster image)
 iseries (create only if -tv) (tv series poster/image)
 iseason (create only if -tv) (tv series season poster/image)
 iepisode (create only if -tv) (tv episode poster/image/screenshot)
-imdb (imbd number for tv show or movie)
-tmdb (the movie database  number for tv show or movie)
-tvmaze (create only if -tv) (tvmaze identifier to tv show)
-tvdb (create only if -tv) (tvdb identifier to tv show)
+imdb (imbd number for tv show or movie) WE SHOULD NOT FILL THIS IN YET (ombd)
+tmdb (the movie database  number for tv show or movie) WE SHOULD NOT FILL THIS IN YET
+tvmaze (create only if -tv) (tvmaze identifier to tv show) WE SHOULD NOT FILL THIS IN YET
+tvdb (create only if -tv) (tvdb identifier to tv show) WE SHOULD NOT FILL THIS IN YET
+ 
 
 
 
+ dseries, network, genre, rating, will be the same for each series, dseason,cast will be the same for each season 
 
-
-
-
-
-
-
-
-
-
-checksum - imported from import table sha256 checksum
-movie: - movie title (create only if movie)
-series: - series name (create only if tv show)
-season: - season number (create only if tv show)
-episode: - episode number (create only if tv show)
-title: - episode title (create only if tv show)
-stitle: - special title (if available)(example extended edition, uncut, etc)
-dmovie: - movie description (create only if movie)
-dseries: - series descriptione (create only if tv show)
-dseason: - season description (create only if tv show)
-depisode: - episode description (create only if tv show)
-year: - release year
-airdate: - (create only if tv show)
-release: - (create only if movie)
-network: - airing network (create only if tv show)
-genre: - genre
-rating: - tv or movie audience rating (tvma tv-7, pg 13, r, etc)
-cast: - top 7 cart
-imdb: - imdb number 
-tmdb: - the movie database
-tvmaze: - tvmaze (create only if tv show)
-tvdb: - the tvdb number (create only if tv show)
-iseries: - image series (create only if tv show)
-iseason: - image season (create only if tv show)
-iepisode: - image episode (create only if tv show)
-imovie: - image movie poster (create movie) only
 
 
 OLD NOTES FROM OLD PROGRAM FOR OLD DATABASE IT WAS TRAINED EXCELENET AT PARSGING FROM AMAZON.COM WE DONT NEED ALL THE SEARCH OR API AS WE ALREADY HAVE THE EXACT LINK HECK YEAH. THIS SCRIPT IS REWIND_TAPE.PY YOU CAN LOOK BUT DO NOT VEER ON THE NEW TASK FROM MY INSTRUCTIONS
