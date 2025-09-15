@@ -40,6 +40,7 @@ Run These Scripts in this order
 - online.py
 - api.py
 - prep.py
+- upload.py
 
 Arguments
 -v verbose mode
