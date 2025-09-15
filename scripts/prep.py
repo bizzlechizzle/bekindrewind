@@ -330,7 +330,7 @@ def main():
             db_path = Path(__file__).parent.parent / "tapedeck.db"
             conn = sqlite3.connect(str(db_path))
             cursor = conn.cursor()
-            cursor.execute("UPDATE import SET newloc = ? WHERE checksum = ?", (str(new_file_path), checksum))
+            cursor.execute("UPDATE import SET newloc = ?, newname = ? WHERE checksum = ?", (str(new_file_path), file_name, checksum))
             conn.commit()
             conn.close()
 
@@ -421,7 +421,7 @@ def main():
                             except (OSError, IOError):
                                 shutil.copy2(sub_file, fileflows_sub_dst)
 
-                cursor.execute("UPDATE import SET newloc = ? WHERE checksum = ?", (str(new_file_path), checksum))
+                cursor.execute("UPDATE import SET newloc = ?, newname = ? WHERE checksum = ?", (str(new_file_path), file_name, checksum))
 
             conn.commit()
             conn.close()

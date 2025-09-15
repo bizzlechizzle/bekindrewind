@@ -16,7 +16,7 @@ Overview
 
 We figure out the new torrent friend name of each file, and then make a hardlink of it, to the "file_upload" location in the user.json create and "fileflows" also located there.
  
-Once we have the new folders, names, and hard links update the new file location for each checksum (import - newloc)
+Once we have the new folders, names, and hard links update the new file location for each checksum (import - newloc) and the new name (import - newname)
 
 We check import - dlsource, then sources.json for correct term, Amazon = AMZN.WEB-DL for example
 

@@ -12,7 +12,7 @@ def create_tables(cursor, is_movie, is_tv):
         i += ",movie TEXT"
     if is_tv:
         i += ",series TEXT,season INTEGER,episode INTEGER,title TEXT"
-    i += ",stitle TEXT,resolution TEXT,hdr TEXT,vcodec TEXT,vacodec TEXT,vbitrate REAL,acodec TEXT,abitrate REAL,achannels TEXT,asample REAL,filesize REAL,duration TEXT,language TEXT,subtitles TEXT,filename TEXT,fileloc TEXT,newloc TEXT,dlsource TEXT,torrentsite TEXT,torrenttype TEXT,url TEXT,uploaded INTEGER"
+    i += ",stitle TEXT,resolution TEXT,hdr TEXT,vcodec TEXT,vacodec TEXT,vbitrate REAL,acodec TEXT,abitrate REAL,achannels TEXT,asample REAL,filesize REAL,duration TEXT,language TEXT,subtitles TEXT,filename TEXT,fileloc TEXT,newname TEXT,newloc TEXT,dlsource TEXT,torrentsite TEXT,torrenttype TEXT,url TEXT,uploaded INTEGER"
 
     cursor.execute(f"CREATE TABLE import ({i})")
 

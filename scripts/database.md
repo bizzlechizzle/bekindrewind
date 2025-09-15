@@ -78,6 +78,7 @@ language
 subtitles
 filename
 fileloc
+newname
 newloc
 dlsource
 torrentsite
