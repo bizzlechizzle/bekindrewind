@@ -14,8 +14,6 @@ def get_data():
     sources_path = Path(__file__).parent.parent / "preferences" / "sources.json"
     with open(sources_path, 'r') as f:
         sources = {k.lower(): v for k, v in json.load(f).items()}
-
-
     db_path = Path(__file__).parent.parent / "tapedeck.db"
     conn = sqlite3.connect(str(db_path))
     cursor = conn.cursor()
@@ -284,7 +282,6 @@ def main():
             if not fileflows_file_path.exists():
                 os.link(data['fileloc'], fileflows_file_path)
 
-            db_path = Path(__file__).parent.parent / "tapedeck.db"
             conn = sqlite3.connect(str(db_path))
             cursor = conn.cursor()
             cursor.execute("UPDATE import SET newloc = ? WHERE checksum = ?", (str(new_file_path), checksum))
@@ -322,7 +319,6 @@ def main():
                 with open(fileflows_nfo_file, 'w') as f:
                     f.write(nfo_content)
 
-            db_path = Path(__file__).parent.parent / "tapedeck.db"
             conn = sqlite3.connect(str(db_path))
             cursor = conn.cursor()
 

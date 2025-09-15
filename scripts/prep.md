@@ -20,7 +20,9 @@ Once we have the new folders, names, and hard links update the new file location
 
 We check import - dlsource, then sources.json for correct term, Amazon = AMZN.WEB-DL for example
 
-We create .nfo files - i have laid out a seriessample.json as a sample in the preferences folder, make one fully compliant with this script and save is as series.json . it needs to be fully updated. the images should show embeded online so i dont have to manully do screenshots. DO THE FULL BLOWN .NFO DONT BE LAZY. EMBEDED IMAGES CLEAN CLEAN CLEAN. for vbitrate use highest quality file. 
+We create .nfo files - i have laid out a "series sample.json" as a sample in the preferences folder, make one fully compliant with this script and save is as series.json . it needs to be fully updated. the images should show embeded online so i dont have to manully do screenshots. DO THE FULL BLOWN .NFO DONT BE LAZY. EMBEDED IMAGES CLEAN CLEAN CLEAN. for vbitrate use highest quality file.
+
+ANNOUNCE KEY LOCATION: Add your TorrentLeech announce key to user.json under torrent_sites.torrentleech.announcekey (replace the xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx placeholder). 
 
 
 
