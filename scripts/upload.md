@@ -163,3 +163,11 @@ A succesful search query returns either a 0 (no hit) or a 1 (hit). Use “exact=
 you want to search for an exact match, rather than fuzzy.
 ► Example search
 9 Reply
+
+
+
+
+
+
+ lets always create the torrents in order, so they get uploaded in order, so
+  s01 would always be first or whatever the oldest one is. 
