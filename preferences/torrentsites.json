@@ -1,20 +1,8 @@
 {
   "torrentleech": {
-    "name": "TorrentLeech",
+    "announce_url": "http://tracker.torrentleech.org/a/{announcekey}/announce",
     "upload_url": "https://www.torrentleech.org/torrents/upload/apiupload",
     "download_url": "https://www.torrentleech.org/torrents/upload/apidownload",
-    "search_url": "https://www.torrentleech.org/api/torrentsearch",
-    "announce_url": "https://tracker.torrentleech.org/{announcekey}/announce",
-    "categories": {
-      "tv_episodes": 26,
-      "tv_episodes_hd": 32,
-      "tv_boxsets": 27,
-      "movies_bluray": 13,
-      "movies_blurayRip": 14,
-      "movies_webRip": 37,
-      "movies_4k": 47
-    },
-    "required_fields": ["announcekey", "category"],
-    "optional_fields": ["imdb", "tvmaze", "tvmazetype", "animeid", "igdburl", "tags", "nfo", "description"]
+    "search_url": "https://www.torrentleech.org/api/torrentsearch"
   }
 }
