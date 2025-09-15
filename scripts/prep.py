@@ -53,9 +53,10 @@ def make_name(record, import_cols, sources, config):
 
     if 'movie' in import_cols:
         title = (data.get('movie') or 'Unknown').replace(' ', '.').replace('_', '.')
-        parts = [title, resolution, source, vcodec, acodec]
+        parts = [title, resolution]
         if hdr.upper() != 'SDR':
-            parts.insert(2, hdr.upper())
+            parts.append(hdr.upper())
+        parts.extend([vcodec, source, acodec])
         if achannels in ['5.1', '7.1']:
             parts.append(achannels)
         base = '.'.join(parts)
@@ -67,30 +68,33 @@ def make_name(record, import_cols, sources, config):
 
         if torrent_type == "episode":
             episode = f"E{data.get('episode', 1):02d}"
-            parts = [series, f"{season}{episode}", resolution, vcodec, source, acodec]
-            folder_parts = parts.copy()
+            parts = [series, f"{season}{episode}", resolution]
+            if hdr.upper() != 'SDR':
+                parts.append(hdr.upper())
+            parts.extend([vcodec, source, acodec])
+            if achannels in ['5.1', '7.1']:
+                parts.append(achannels)
+            folder_base = '.'.join(parts)
+            return f"{folder_base}-{group}{ext}", f"{folder_base}-{group}"
         else:
-            parts = [series, season, resolution, vcodec, source, acodec]
-            folder_parts = parts.copy()
-            episode = f"E{data.get('episode', 1):02d}"
-            parts = [series, f"{season}{episode}", resolution, vcodec, source, acodec]
-
-        if hdr.upper() != 'SDR':
-            parts.insert(2, hdr.upper())
-            if torrent_type != "episode":
-                folder_parts.insert(2, hdr.upper())
-        if achannels in ['5.1', '7.1']:
-            parts.append(achannels)
-            if torrent_type != "episode":
+            folder_parts = [series, season, resolution]
+            if hdr.upper() != 'SDR':
+                folder_parts.append(hdr.upper())
+            folder_parts.extend([vcodec, source, acodec])
+            if achannels in ['5.1', '7.1']:
                 folder_parts.append(achannels)
-
-        file_base = '.'.join(parts)
-        if torrent_type == "episode":
-            folder_base = file_base
-        else:
             folder_base = '.'.join(folder_parts)
 
-        return f"{file_base}-{group}{ext}", f"{folder_base}-{group}"
+            episode = f"E{data.get('episode', 1):02d}"
+            file_parts = [series, f"{season}{episode}", resolution]
+            if hdr.upper() != 'SDR':
+                file_parts.append(hdr.upper())
+            file_parts.extend([vcodec, source, acodec])
+            if achannels in ['5.1', '7.1']:
+                file_parts.append(achannels)
+            file_base = '.'.join(file_parts)
+
+            return f"{file_base}-{group}{ext}", f"{folder_base}-{group}"
 
 def create_nfo(records, import_cols, online_data, config):
     if not records:
@@ -288,6 +292,7 @@ def main():
             if not fileflows_file_path.exists():
                 os.link(data['fileloc'], fileflows_file_path)
 
+            db_path = Path(__file__).parent.parent / "tapedeck.db"
             conn = sqlite3.connect(str(db_path))
             cursor = conn.cursor()
             cursor.execute("UPDATE import SET newloc = ? WHERE checksum = ?", (str(new_file_path), checksum))
