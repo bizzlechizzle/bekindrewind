@@ -7,12 +7,27 @@ import shutil
 import sqlite3
 import subprocess
 import re
+import sys
 from pathlib import Path
 
 def load_config():
     config_path = Path(__file__).parent.parent / "user.json"
-    with open(config_path, 'r') as f:
-        return json.load(f)
+    try:
+        with open(config_path, 'r') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        print(
+            "Error: Configuration file not found at "
+            f"{config_path}. Create user.json in the project root "
+            "or update the path in the script."
+        )
+        sys.exit(1)
+    except json.JSONDecodeError as exc:
+        print(
+            "Error: Configuration file contains invalid JSON. "
+            f"Check {config_path} and fix the syntax (details: {exc})."
+        )
+        sys.exit(1)
 
 def load_torrent_sites():
     sites_path = Path(__file__).parent.parent / "preferences" / "torrentsites.json"
