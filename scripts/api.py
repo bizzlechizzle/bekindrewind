@@ -156,99 +156,153 @@ def is_origin_source_image(image_url, source):
     domains = source_domains.get(source.lower(), [])
     return any(domain in image_url.lower() for domain in domains)
 
-def extract_field(field, tvdb_data, tvmaze_data, imdb_data, tmdb_data, existing_value=None, source=None):
+def _clean_summary(summary):
+    return re.sub(r'<[^>]+>', '', summary or '').strip() or None
+
+
+def extract_description(field, tvdb_data, tvmaze_data, imdb_data, tmdb_data, **_):
     if field == 'dmovie':
         return best_choice({
             'tmdb': tmdb_data.get('overview'),
             'imdb': imdb_data.get('Plot') if imdb_data.get('Plot') != 'N/A' else None
         })
 
-    elif field == 'dseries':
+    if field == 'dseries':
         return best_choice({
             'tvdb': tvdb_data.get('overview'),
-            'tvmaze': re.sub(r'<[^>]+>', '', tvmaze_data.get('summary', '')).strip() or None,
+            'tvmaze': _clean_summary(tvmaze_data.get('summary', '')),
             'imdb': imdb_data.get('Plot') if imdb_data.get('Plot') != 'N/A' else None,
             'tmdb': tmdb_data.get('overview')
         })
 
-    elif field in ['dseason', 'depisode']:
+    if field in ['dseason', 'depisode']:
         return best_choice({
             'tvdb': tvdb_data.get('overview'),
-            'tvmaze': re.sub(r'<[^>]+>', '', tvmaze_data.get('summary', '')).strip() or None
+            'tvmaze': _clean_summary(tvmaze_data.get('summary', ''))
         })
 
-    elif field == 'airdate':
-        return best_choice({
-            'tvdb': tvdb_data.get('firstAired'),
-            'tvmaze': tvmaze_data.get('premiered'),
-            'tmdb': tmdb_data.get('first_air_date')
-        })
+    return None
 
-    elif field == 'network':
-        return best_choice({
-            'tvdb': tvdb_data.get('primaryNetwork', {}).get('name'),
-            'tvmaze': tvmaze_data.get('network', {}).get('name') or tvmaze_data.get('webChannel', {}).get('name'),
-            'tmdb': tmdb_data.get('networks', [{}])[0].get('name') if tmdb_data.get('networks') else None
-        })
 
-    elif field == 'genre':
-        all_genres = []
-        if tvdb_data.get('genres'):
-            all_genres.extend([g['name'] for g in tvdb_data['genres']])
-        if tvmaze_data.get('genres'):
-            all_genres.extend(tvmaze_data['genres'])
-        if imdb_data.get('Genre') and imdb_data['Genre'] != 'N/A':
-            all_genres.extend([g.strip() for g in imdb_data['Genre'].split(',')])
-        if tmdb_data.get('genres'):
-            all_genres.extend([g['name'] for g in tmdb_data['genres']])
+def extract_airdate(*, tvdb_data, tvmaze_data, tmdb_data, **_):
+    return best_choice({
+        'tvdb': tvdb_data.get('firstAired'),
+        'tvmaze': tvmaze_data.get('premiered'),
+        'tmdb': tmdb_data.get('first_air_date')
+    })
 
-        if all_genres:
-            unique = []
-            seen = set()
-            for g in all_genres:
-                g_clean = g.strip().lower()
-                if g_clean not in seen and g.strip():
-                    unique.append(g.strip())
-                    seen.add(g_clean)
-            return ', '.join(unique[:5])
 
-    elif field == 'rating':
-        return best_choice({
-            'tvdb': tvdb_data.get('rating'),
-            'imdb': imdb_data.get('Rated') if imdb_data.get('Rated') != 'N/A' else None
-        })
+def extract_network(*, tvdb_data, tvmaze_data, tmdb_data, **_):
+    return best_choice({
+        'tvdb': tvdb_data.get('primaryNetwork', {}).get('name'),
+        'tvmaze': tvmaze_data.get('network', {}).get('name') or tvmaze_data.get('webChannel', {}).get('name'),
+        'tmdb': tmdb_data.get('networks', [{}])[0].get('name') if tmdb_data.get('networks') else None
+    })
 
-    elif field == 'cast':
-        actors = imdb_data.get('Actors')
-        if actors and actors != 'N/A':
-            return ', '.join(actors.split(', ')[:5])
 
-    elif field == 'release':
-        return best_choice({
-            'tmdb': tmdb_data.get('release_date'),
-            'imdb': imdb_data.get('Released') if imdb_data.get('Released') != 'N/A' else None
-        })
+def extract_genre(tvdb_data, tvmaze_data, imdb_data, tmdb_data, **_):
+    all_genres = []
+    if tvdb_data.get('genres'):
+        all_genres.extend([g['name'] for g in tvdb_data['genres']])
+    if tvmaze_data.get('genres'):
+        all_genres.extend(tvmaze_data['genres'])
+    if imdb_data.get('Genre') and imdb_data['Genre'] != 'N/A':
+        all_genres.extend([g.strip() for g in imdb_data['Genre'].split(',')])
+    if tmdb_data.get('genres'):
+        all_genres.extend([g['name'] for g in tmdb_data['genres']])
 
-    elif field == 'studio':
-        companies = tmdb_data.get('production_companies')
-        return companies[0]['name'] if companies else None
+    if all_genres:
+        unique = []
+        seen = set()
+        for g in all_genres:
+            g_clean = g.strip().lower()
+            if g_clean not in seen and g.strip():
+                unique.append(g.strip())
+                seen.add(g_clean)
+        return ', '.join(unique[:5])
 
-    elif field == 'imovie':
+    return None
+
+
+def extract_rating(*, tvdb_data, imdb_data, **_):
+    return best_choice({
+        'tvdb': tvdb_data.get('rating'),
+        'imdb': imdb_data.get('Rated') if imdb_data.get('Rated') != 'N/A' else None
+    })
+
+
+def extract_cast(*, imdb_data, **_):
+    actors = imdb_data.get('Actors')
+    if actors and actors != 'N/A':
+        return ', '.join(actors.split(', ')[:5])
+    return None
+
+
+def extract_release(*, tmdb_data, imdb_data, **_):
+    return best_choice({
+        'tmdb': tmdb_data.get('release_date'),
+        'imdb': imdb_data.get('Released') if imdb_data.get('Released') != 'N/A' else None
+    })
+
+
+def extract_studio(*, tmdb_data, **_):
+    companies = tmdb_data.get('production_companies')
+    return companies[0]['name'] if companies else None
+
+
+def extract_images(field, tvdb_data, tvmaze_data, tmdb_data, existing_value=None, source=None, **_):
+    if field == 'imovie':
         if existing_value and source and is_origin_source_image(existing_value, source):
             return existing_value
         path = tmdb_data.get('poster_path')
         return f"https://image.tmdb.org/t/p/w500{path}" if path else None
 
-    elif field in ['iseries', 'iseason', 'iepisode']:
+    if field in ['iseries', 'iseason', 'iepisode']:
         if existing_value and source and is_origin_source_image(existing_value, source):
             return existing_value
+        tmdb_key = 'poster_path' if field != 'iepisode' else 'still_path'
         return best_choice({
             'tvdb': tvdb_data.get('image'),
             'tvmaze': tvmaze_data.get('image', {}).get('original'),
-            'tmdb': f"https://image.tmdb.org/t/p/w500{tmdb_data.get('poster_path' if field != 'iepisode' else 'still_path')}" if tmdb_data.get('poster_path' if field != 'iepisode' else 'still_path') else None
+            'tmdb': f"https://image.tmdb.org/t/p/w500{tmdb_data.get(tmdb_key)}" if tmdb_data.get(tmdb_key) else None
         })
 
     return None
+
+
+FIELD_HANDLERS = {
+    'dmovie': extract_description,
+    'dseries': extract_description,
+    'dseason': extract_description,
+    'depisode': extract_description,
+    'airdate': extract_airdate,
+    'network': extract_network,
+    'genre': extract_genre,
+    'rating': extract_rating,
+    'cast': extract_cast,
+    'release': extract_release,
+    'studio': extract_studio,
+    'imovie': extract_images,
+    'iseries': extract_images,
+    'iseason': extract_images,
+    'iepisode': extract_images,
+}
+
+
+def extract_field(field, tvdb_data, tvmaze_data, imdb_data, tmdb_data, existing_value=None, source=None):
+    handler = FIELD_HANDLERS.get(field)
+    if not handler:
+        return None
+
+    return handler(
+        field=field,
+        tvdb_data=tvdb_data,
+        tvmaze_data=tvmaze_data,
+        imdb_data=imdb_data,
+        tmdb_data=tmdb_data,
+        existing_value=existing_value,
+        source=source
+    )
 
 def get_api_ids(checksum):
     db_path = Path(__file__).parent.parent / "tapedeck.db"
