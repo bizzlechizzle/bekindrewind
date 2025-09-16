@@ -40,8 +40,8 @@ def call_api(url):
         response = requests.get(url, timeout=10)
         if response.status_code == 200:
             return response.json()
-    except:
-        pass
+    except requests.RequestException as e:
+        print(f"API request error for {url}: {e}")
     return None
 
 def smart_pick(results, target):
@@ -118,8 +118,8 @@ def search_tvdb(series_name, api_key):
             search_result = search_response.json()
             if search_result.get('data'):
                 return search_result['data'][0]
-    except:
-        pass
+    except requests.RequestException as e:
+        print(f"TVDB request error for '{series_name}': {e}")
     return None
 
 def best_choice(options):
@@ -253,15 +253,14 @@ def extract_field(field, tvdb_data, tvmaze_data, imdb_data, tmdb_data, existing_
 def get_api_ids(checksum):
     db_path = Path(__file__).parent.parent / "tapedeck.db"
     try:
-        conn = sqlite3.connect(str(db_path))
-        cursor = conn.cursor()
-        cursor.execute("SELECT imdb, tmdb, tvmaze, tvdb FROM online WHERE checksum = ?", (checksum,))
-        result = cursor.fetchone()
-        conn.close()
-        if result:
-            return {'imdb': result[0], 'tmdb': result[1], 'tvmaze': result[2], 'tvdb': result[3]}
-    except:
-        pass
+        with sqlite3.connect(str(db_path)) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT imdb, tmdb, tvmaze, tvdb FROM online WHERE checksum = ?", (checksum,))
+            result = cursor.fetchone()
+            if result:
+                return {'imdb': result[0], 'tmdb': result[1], 'tvmaze': result[2], 'tvdb': result[3]}
+    except sqlite3.Error as e:
+        print(f"Database error retrieving API IDs for {checksum}: {e}")
     return {'imdb': None, 'tmdb': None, 'tvmaze': None, 'tvdb': None}
 
 def update_online_table(checksum, updates, api_ids):
