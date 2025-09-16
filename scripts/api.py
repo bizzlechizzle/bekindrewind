@@ -15,24 +15,22 @@ def get_config():
 
 def get_records():
     db_path = Path(__file__).parent.parent / "tapedeck.db"
-    conn = sqlite3.connect(str(db_path))
-    cursor = conn.cursor()
+    with sqlite3.connect(str(db_path)) as conn:
+        cursor = conn.cursor()
 
-    cursor.execute("PRAGMA table_info(import)")
-    cols = {row[1] for row in cursor.fetchall()}
+        cursor.execute("PRAGMA table_info(import)")
+        cols = {row[1] for row in cursor.fetchall()}
 
-    select_fields = ["checksum"]
-    if 'movie' in cols: select_fields.append("movie")
-    if 'series' in cols: select_fields.extend(["series", "season", "episode"])
-    if 'dlsource' in cols: select_fields.append("dlsource")
+        select_fields = ["checksum"]
+        if 'movie' in cols: select_fields.append("movie")
+        if 'series' in cols: select_fields.extend(["series", "season", "episode"])
+        if 'dlsource' in cols: select_fields.append("dlsource")
 
-    if len(select_fields) == 1:
-        conn.close()
-        return [], cols
+        if len(select_fields) == 1:
+            return [], cols
 
-    cursor.execute(f"SELECT {', '.join(select_fields)} FROM import")
-    data = cursor.fetchall()
-    conn.close()
+        cursor.execute(f"SELECT {', '.join(select_fields)} FROM import")
+        data = cursor.fetchall()
     return data, cols
 
 def call_api(url):
@@ -269,20 +267,17 @@ def update_online_table(checksum, updates, api_ids):
         return 0
 
     db_path = Path(__file__).parent.parent / "tapedeck.db"
-    conn = sqlite3.connect(str(db_path))
-    cursor = conn.cursor()
+    with sqlite3.connect(str(db_path)) as conn:
+        cursor = conn.cursor()
 
-    all_updates = {}
-    all_updates.update(updates)
-    all_updates.update({k: v for k, v in api_ids.items() if v is not None})
+        all_updates = {}
+        all_updates.update(updates)
+        all_updates.update({k: v for k, v in api_ids.items() if v is not None})
 
-    if all_updates:
-        fields = ', '.join(f"{k} = ?" for k in all_updates.keys())
-        values = list(all_updates.values()) + [checksum]
-        cursor.execute(f"UPDATE online SET {fields} WHERE checksum = ?", values)
-
-    conn.commit()
-    conn.close()
+        if all_updates:
+            fields = ', '.join(f"{k} = ?" for k in all_updates.keys())
+            values = list(all_updates.values()) + [checksum]
+            cursor.execute(f"UPDATE online SET {fields} WHERE checksum = ?", values)
     return len(updates)
 
 def update_import_table(checksum, api_ids):
@@ -290,25 +285,22 @@ def update_import_table(checksum, api_ids):
         return
 
     db_path = Path(__file__).parent.parent / "tapedeck.db"
-    conn = sqlite3.connect(str(db_path))
-    cursor = conn.cursor()
+    with sqlite3.connect(str(db_path)) as conn:
+        cursor = conn.cursor()
 
-    cursor.execute("PRAGMA table_info(import)")
-    cols = {row[1] for row in cursor.fetchall()}
+        cursor.execute("PRAGMA table_info(import)")
+        cols = {row[1] for row in cursor.fetchall()}
 
-    import_updates = {}
-    if 'imdb' in cols and api_ids['imdb']: import_updates['imdb'] = api_ids['imdb']
-    if 'tmdb' in cols and api_ids['tmdb']: import_updates['tmdb'] = api_ids['tmdb']
-    if 'tvmaze' in cols and api_ids['tvmaze']: import_updates['tvmaze'] = api_ids['tvmaze']
-    if 'tvdb' in cols and api_ids['tvdb']: import_updates['tvdb'] = api_ids['tvdb']
+        import_updates = {}
+        if 'imdb' in cols and api_ids['imdb']: import_updates['imdb'] = api_ids['imdb']
+        if 'tmdb' in cols and api_ids['tmdb']: import_updates['tmdb'] = api_ids['tmdb']
+        if 'tvmaze' in cols and api_ids['tvmaze']: import_updates['tvmaze'] = api_ids['tvmaze']
+        if 'tvdb' in cols and api_ids['tvdb']: import_updates['tvdb'] = api_ids['tvdb']
 
-    if import_updates:
-        fields = ', '.join(f"{k} = ?" for k in import_updates.keys())
-        values = list(import_updates.values()) + [checksum]
-        cursor.execute(f"UPDATE import SET {fields} WHERE checksum = ?", values)
-
-    conn.commit()
-    conn.close()
+        if import_updates:
+            fields = ', '.join(f"{k} = ?" for k in import_updates.keys())
+            values = list(import_updates.values()) + [checksum]
+            cursor.execute(f"UPDATE import SET {fields} WHERE checksum = ?", values)
 
 def main():
     parser = argparse.ArgumentParser()
