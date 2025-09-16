@@ -4,6 +4,7 @@ import argparse
 import re
 import sqlite3
 import subprocess
+import sys
 from pathlib import Path
 
 
@@ -11,16 +12,38 @@ def get_data(file_path, verbose):
     """Get ffmpeg and mediainfo output."""
     if verbose: print(f"  Running ffmpeg...")
     try:
-        ffmpeg = subprocess.run(["ffmpeg", "-i", str(file_path), "-hide_banner"],
-                              capture_output=True, text=True, timeout=30).stderr
-    except:
+        result = subprocess.run(["ffmpeg", "-i", str(file_path), "-hide_banner"],
+                                capture_output=True, text=True, timeout=30)
+        # ffmpeg -i often exits with status 1 even on success; treat 0 and 1 as expected.
+        if result.returncode not in (0, 1):
+            result.check_returncode()
+        ffmpeg = result.stderr
+    except subprocess.TimeoutExpired:
+        print(f"ffmpeg command timed out for {file_path}", file=sys.stderr)
+        ffmpeg = ""
+    except subprocess.CalledProcessError as exc:
+        print(f"ffmpeg command failed for {file_path}: return code {exc.returncode}",
+              file=sys.stderr)
+        ffmpeg = (exc.stderr or exc.output or "")
+    except FileNotFoundError:
+        print("ffmpeg executable not found. Please install ffmpeg.", file=sys.stderr)
         ffmpeg = ""
 
     if verbose: print(f"  Running mediainfo...")
     try:
-        mediainfo = subprocess.run(["mediainfo", str(file_path)],
-                                 capture_output=True, text=True, timeout=30).stdout
-    except:
+        result = subprocess.run(["mediainfo", str(file_path)],
+                                capture_output=True, text=True, timeout=30)
+        result.check_returncode()
+        mediainfo = result.stdout
+    except subprocess.TimeoutExpired:
+        print(f"mediainfo command timed out for {file_path}", file=sys.stderr)
+        mediainfo = ""
+    except subprocess.CalledProcessError as exc:
+        print(f"mediainfo command failed for {file_path}: return code {exc.returncode}",
+              file=sys.stderr)
+        mediainfo = (exc.stdout or exc.stderr or "")
+    except FileNotFoundError:
+        print("mediainfo executable not found. Please install mediainfo.", file=sys.stderr)
         mediainfo = ""
 
     return ffmpeg, mediainfo
