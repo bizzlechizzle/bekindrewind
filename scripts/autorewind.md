@@ -45,4 +45,5 @@ Run These Scripts in this order
 - cleanup.py
 
 Arguments
--v verbose mode
+
+- ``-v`` / ``--verbose`` — show progress while passing ``-v`` to each script

@@ -7,20 +7,17 @@
     "torrentsite": "torrentleech",
     "torrenttype": "season"
   },
-
   "options": {
     "torrenttype": [
       "series",
-      "season", 
+      "season",
       "episode",
       "movie"
     ],
     "torrentsite": [
-      "torrentleech",
-      "thepiratebay"
+      "torrentleech"
     ]
   },
-
   "locations": {
     "file_upload": {
       "tv_shows": "/mnt/storage/uploads/tv shows/",
@@ -32,20 +29,18 @@
     },
     "monitored_upload": {
       "tv_shows": "/mnt/storage/uploads/torrents/tv shows/",
-      "movies": "/mnt/projects/uploads/torrents/movies/"
+      "movies": "/mnt/storage/uploads/torrents/movies/"
     },
     "fileflows": {
       "tv_shows": "/mnt/projects/downloads/streamfab/uploads/tv shows/",
       "movies": "/mnt/projects/downloads/streamfab/uploads/movies/"
     }
   },
-
   "API_KEYS": {
     "OMDB": "4d3ea197",
     "TMDB": "1d83e3b78d9298ded6e7aab21667e564",
     "theTVDB": "b93ead8c-3804-448e-99b3-0f6ea51b0b3f"
   },
-
   "torrent_sites": {
     "torrentleech": {
       "announcekey": "d025d0f3398ffad2ab9eb52a79e9cc55"

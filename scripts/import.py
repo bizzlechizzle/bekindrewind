@@ -24,129 +24,178 @@ def get_checksum(file_path):
     return sha256_hash.hexdigest()
 
 
+STREAMING_SOURCES = (
+    "amazon",
+    "youtube",
+    "hbo",
+    "max",
+    "netflix",
+    "hulu",
+    "disney",
+    "paramount",
+    "peacock",
+    "apple",
+)
+
+
 def extract_filesource(file_path):
-    """Extract online file source from path per import.md: the folder the files were found in if applicable (Amazon, Youtube, HBO, etc)."""
-    parts = Path(file_path).parts
-    streaming_sources = ['amazon', 'youtube', 'hbo', 'max', 'netflix', 'hulu', 'disney', 'paramount', 'peacock', 'apple']
-
-    for part in parts:
-        part_lower = part.lower()
-        for source in streaming_sources:
-            if source in part_lower:
-                return part
-    return "unknown"
-
-
-
+    """Return folder name representing the online source if present, else parent folder."""
+    path = Path(file_path)
+    for part in path.parts:
+        lowered = part.lower()
+        if any(source in lowered for source in STREAMING_SOURCES):
+            return part
+    parent_name = path.parent.name
+    return parent_name or "unknown"
 
 def scan_videos(directory):
     """Find video files."""
-    video_exts = {'.mkv', '.mp4', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v'}
-    return [p for p in Path(directory).rglob('*')
-            if p.is_file() and p.suffix.lower() in video_exts]
+    video_exts = {
+        ".mkv",
+        ".mp4",
+        ".avi",
+        ".mov",
+        ".wmv",
+        ".flv",
+        ".webm",
+        ".m4v",
+    }
+    return sorted(
+        p for p in Path(directory).rglob("*") if p.is_file() and p.suffix.lower() in video_exts
+    )
+
+
+def _first_or_none(value):
+    if isinstance(value, (list, tuple)):
+        return value[0] if value else None
+    return value
+
+
+def _normalize_number(value):
+    candidate = _first_or_none(value)
+    if candidate is None:
+        return None
+    try:
+        return int(candidate)
+    except (TypeError, ValueError):
+        return None
 
 
 def extract_media_info(guess):
-    """KISS: Extract media info from guessit result."""
-    if guess.get('type') == 'movie':
+    """Extract core media metadata from guessit result."""
+    media_type = str(guess.get("type", "")).lower()
+    stitle = guess.get("edition")
+
+    if media_type == "movie":
         return {
-            'movie': guess.get('title', 'Unknown'),
-            'stitle': guess.get('edition'),
-            'is_movie': True
-        }
-    else:
-        return {
-            'series': guess.get('title', 'Unknown'),
-            'season': guess.get('season'),
-            'episode': guess.get('episode'),
-            'title': guess.get('episode_title'),
-            'stitle': guess.get('edition'),
-            'is_movie': False
+            "movie": guess.get("title") or "Unknown",
+            "stitle": stitle,
+            "is_movie": True,
         }
 
+    series_name = guess.get("title") or guess.get("series") or "Unknown"
+    return {
+        "series": series_name,
+        "season": _normalize_number(guess.get("season")),
+        "episode": _normalize_number(guess.get("episode")),
+        "title": guess.get("episode_title"),
+        "stitle": stitle,
+        "is_movie": False,
+    }
+
 def process_single_file(file_path, torrent_site, torrent_type, verbose):
-    """KISS: Process single video file."""
+    """Process one video file into an import table entry."""
     if verbose:
         print(f"Processing: {file_path.name}")
 
     checksum = get_checksum(file_path)
-    guess = guessit(str(file_path.name))
-    dlsource = extract_filesource(file_path)
-
+    guess = guessit(str(file_path))
     entry = {
-        'checksum': checksum,
-        'filename': file_path.name,
-        'fileloc': str(file_path),
-        'dlsource': dlsource,
-        'torrentsite': torrent_site,
-        'torrenttype': torrent_type
+        "checksum": checksum,
+        "filename": file_path.name,
+        "fileloc": str(file_path),
+        "dlsource": extract_filesource(file_path),
+        "torrentsite": torrent_site,
+        "torrenttype": torrent_type,
     }
-
-    # Add media-specific info
     entry.update(extract_media_info(guess))
     return entry
 
 def process_files(files, torrent_site, torrent_type, verbose):
     """Process video files and extract data per import.md instructions."""
-    data = []
-
+    entries = []
     for file_path in files:
         try:
-            entry = process_single_file(file_path, torrent_site, torrent_type, verbose)
-            data.append(entry)
-        except Exception as e:
-            print(f"Error processing {file_path.name}: {e}")
-            continue
-
-    return data
+            entries.append(process_single_file(file_path, torrent_site, torrent_type, verbose))
+        except KeyboardInterrupt:
+            raise
+        except Exception as exc:
+            print(f"Error processing {file_path.name}: {exc}")
+    return entries
 
 
 def create_database(verbose):
     """Run database.py to create unified schema database."""
     script_dir = Path(__file__).parent
-    cmd = [sys.executable, str(script_dir / "database.py"), "-tv"]  # -tv creates unified schema
-
+    cmd = [sys.executable, str(script_dir / "database.py"), "-tv"]
     if verbose:
         cmd.append("-v")
-
     subprocess.run(cmd, check=True)
+
+
+MOVIE_COLUMNS = (
+    "checksum",
+    "movie",
+    "filename",
+    "fileloc",
+    "torrentsite",
+    "torrenttype",
+    "dlsource",
+    "stitle",
+)
+
+EPISODE_COLUMNS = (
+    "checksum",
+    "series",
+    "season",
+    "episode",
+    "title",
+    "filename",
+    "fileloc",
+    "torrentsite",
+    "torrenttype",
+    "dlsource",
+    "stitle",
+)
+
+
+def _insert_import(cursor, entry):
+    if entry["is_movie"]:
+        columns = MOVIE_COLUMNS
+    else:
+        columns = EPISODE_COLUMNS
+    placeholders = ", ".join("?" for _ in columns)
+    column_list = ", ".join(columns)
+    values = tuple(entry.get(column) for column in columns)
+    cursor.execute(
+        f"INSERT OR REPLACE INTO import ({column_list}) VALUES ({placeholders})",
+        values,
+    )
 
 
 def insert_data(data, verbose):
     """Insert data into import table and copy checksums to online table."""
-    script_dir = Path(__file__).parent
-    db_path = script_dir.parent / "tapedeck.db"
-
-    conn = sqlite3.connect(str(db_path))
-    cursor = conn.cursor()
-
-    for entry in data:
-        # KISS: Simplified insert with unified schema - all columns always exist
-        if entry['is_movie']:
-            cursor.execute("""INSERT OR REPLACE INTO import
-                             (checksum, movie, filename, fileloc, torrentsite, torrenttype, dlsource, stitle)
-                             VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                          (entry['checksum'], entry.get('movie'), entry['filename'],
-                           entry['fileloc'], entry['torrentsite'], entry['torrenttype'],
-                           entry.get('dlsource'), entry.get('stitle')))
-        else:
-            cursor.execute("""INSERT OR REPLACE INTO import
-                             (checksum, series, season, episode, title, filename, fileloc,
-                              torrentsite, torrenttype, dlsource, stitle)
-                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                          (entry['checksum'], entry.get('series'), entry.get('season'),
-                           entry.get('episode'), entry.get('title'), entry['filename'],
-                           entry['fileloc'], entry['torrentsite'], entry['torrenttype'],
-                           entry.get('dlsource'), entry.get('stitle')))
-
-        # Copy checksum to online table per instructions - ONLY CHECKSUM
-        cursor.execute("INSERT OR REPLACE INTO online (checksum) VALUES (?)", (entry['checksum'],))
-
-        if verbose:
-            print(f"Imported: {entry['filename']}")
-
-    conn.commit()
-    conn.close()
+    db_path = Path(__file__).parent.parent / "tapedeck.db"
+    with sqlite3.connect(str(db_path)) as conn:
+        cursor = conn.cursor()
+        for entry in data:
+            _insert_import(cursor, entry)
+            cursor.execute(
+                "INSERT OR REPLACE INTO online (checksum) VALUES (?)",
+                (entry["checksum"],),
+            )
+            if verbose:
+                print(f"Imported: {entry['filename']}")
 
 
 def main():
@@ -161,30 +210,42 @@ def main():
 
     args = parser.parse_args()
 
-    # Load user.json config with error handling
     config_path = Path(__file__).parent.parent / "user.json"
     try:
-        with open(config_path, 'r') as f:
-            config = json.load(f)
+        with open(config_path, "r", encoding="utf-8") as config_file:
+            config = json.load(config_file)
     except FileNotFoundError:
         print(f"Error: {config_path} not found")
         sys.exit(1)
-    except json.JSONDecodeError:
-        print(f"Error: Invalid JSON in {config_path}")
+    except json.JSONDecodeError as exc:
+        print(f"Error: Invalid JSON in {config_path}: {exc}")
         sys.exit(1)
 
-    defaults = config.get('default', {})
+    defaults = config.get("default", {})
 
-    # Determine values from args or defaults
-    location = args.loc or defaults.get('filelocation', '.')
-    torrent_site = args.site or defaults.get('torrentsite', '')
+    location_value = args.loc or defaults.get("filelocation")
+    if not location_value:
+        print("Error: File location is not configured")
+        sys.exit(1)
+    location_path = Path(location_value).expanduser()
 
-    # Validate location exists
-    if not Path(location).exists():
-        print(f"Error: Location does not exist: {location}")
+    if not location_path.exists():
+        print(f"Error: Location does not exist: {location_path}")
+        sys.exit(1)
+    if not location_path.is_dir():
+        print(f"Error: Location is not a directory: {location_path}")
         sys.exit(1)
 
-    # KISS: Simplified torrent type mapping
+    torrent_site = args.site or defaults.get("torrentsite")
+    if not torrent_site:
+        print("Error: Torrent site is not configured")
+        sys.exit(1)
+
+    torrent_flags = [args.movie, args.series, args.season, args.episode]
+    if sum(bool(flag) for flag in torrent_flags) > 1:
+        print("Error: Specify only one torrent type flag")
+        sys.exit(1)
+
     if args.movie:
         torrent_type = "movie"
     elif args.series:
@@ -194,31 +255,36 @@ def main():
     elif args.episode:
         torrent_type = "episode"
     else:
-        torrent_type = defaults.get('torrenttype', 'season')
+        torrent_type = defaults.get("torrenttype", "season")
 
-    if args.verbose:
-        print(f"Scanning: {location}")
-
-    # Scan and process files
-    video_files = scan_videos(location)
-    if not video_files:
-        print(f"No video files found in: {location}")
-        return
-
-    data = process_files(video_files, torrent_site, torrent_type, args.verbose)
-
-    # Create unified schema database (KISS: no conditional logic needed)
-    try:
-        create_database(args.verbose)
-    except subprocess.CalledProcessError as e:
-        print(f"Error creating database: {e}")
+    valid_torrent_types = {"movie", "series", "season", "episode"}
+    if torrent_type not in valid_torrent_types:
+        print(f"Error: Invalid torrent type: {torrent_type}")
         sys.exit(1)
 
-    # Insert data
+    if args.verbose:
+        print(f"Scanning: {location_path}")
+
+    video_files = scan_videos(location_path)
+    if not video_files:
+        print(f"No video files found in: {location_path}")
+        return
+
+    try:
+        create_database(args.verbose)
+    except subprocess.CalledProcessError as exc:
+        print(f"Error creating database: {exc}")
+        sys.exit(1)
+
+    data = process_files(video_files, torrent_site, torrent_type, args.verbose)
+    if not data:
+        print("No files imported.")
+        return
+
     try:
         insert_data(data, args.verbose)
-    except Exception as e:
-        print(f"Error inserting data: {e}")
+    except sqlite3.Error as exc:
+        print(f"Error inserting data: {exc}")
         sys.exit(1)
 
     print(f"Successfully imported {len(data)} files")

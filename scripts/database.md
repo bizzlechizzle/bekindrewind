@@ -19,7 +19,7 @@ Overview
 This script builds an empty SQLite DB. If there's an old database, FUCKING delete it FOREVER. The database now creates a unified schema with ALL columns for both movies and TV shows, regardless of flags. This prevents script failures when columns don't exist. The descriptions are for reference only and do not go into the database. We do not expect any specific value types, this is a blank clean, simple database. 
 
 
-Database Name : tapedeck.db
+Database Name : tapedeck.db (generated locally, not tracked in git)
 
 
 Folder Layout 

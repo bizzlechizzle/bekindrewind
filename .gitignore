@@ -1,0 +1,12 @@
+# macOS metadata
+.DS_Store
+
+# Python cache files
+__pycache__/
+*.py[cod]
+
+# SQLite temporary files
+*.sqlite-journal
+
+# Generated database
+tapedeck.db

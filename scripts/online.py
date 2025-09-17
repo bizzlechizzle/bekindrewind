@@ -5,8 +5,14 @@ import asyncio
 import json
 import re
 import sqlite3
+import sys
+from collections import defaultdict
 from pathlib import Path
 from difflib import SequenceMatcher
+
+MIN_HTML_LENGTH = 100_000
+AMAZON_URL_PATTERN = re.compile(r"https://www\\.amazon\\.com/gp/video/detail/([A-Z0-9]+)/", re.IGNORECASE)
+LOG_FILENAMES = ("StreamFab.log", "streamfab.log")
 
 def check_playwright():
     try:
@@ -14,58 +20,97 @@ def check_playwright():
         return async_playwright
     except ImportError:
         print("Error: playwright library not found. Install with: pip install playwright")
-        exit(1)
+        sys.exit(1)
+
 
 def get_config():
     config_path = Path(__file__).parent.parent / "user.json"
-    with open(config_path, 'r') as f:
+    if not config_path.exists():
+        print(f"Missing configuration file: {config_path}")
+        sys.exit(1)
+
+    with config_path.open('r', encoding='utf-8') as f:
         config = json.load(f)
-    return config.get('default', {}).get('loglocation', '/tmp')
+
+    log_location = config.get('default', {}).get('loglocation')
+    if not log_location:
+        print("loglocation missing from user.json default settings")
+        sys.exit(1)
+
+    return Path(log_location)
+
+
+def _find_log_file(log_dir):
+    for name in LOG_FILENAMES:
+        candidate = log_dir / name
+        if candidate.exists():
+            return candidate
+    print(f"StreamFab log not found in {log_dir}")
+    return None
+
 
 def get_urls(log_path):
-    log_file = Path(log_path) / "StreamFab.log"
-    if not log_file.exists():
-        print(f"StreamFab.log not found: {log_file}")
+    log_dir = Path(log_path)
+    log_file = _find_log_file(log_dir)
+    if not log_file:
         return []
 
     urls = []
-    with open(log_file, 'r', encoding='utf-8', errors='ignore') as f:
+    with log_file.open('r', encoding='utf-8', errors='ignore') as f:
         for line in f:
-            matches = re.findall(r'https://www\.amazon\.com/gp/video/detail/([A-Z0-9]+)/', line)
-            for match in matches:
-                url = f"https://www.amazon.com/gp/video/detail/{match}/"
+            for match in AMAZON_URL_PATTERN.finditer(line):
+                url = f"https://www.amazon.com/gp/video/detail/{match.group(1).upper()}/"
                 if url not in urls:
                     urls.append(url)
     return urls[::-1]
 
+
 def get_content():
     db_path = Path(__file__).parent.parent / "tapedeck.db"
+    if not db_path.exists():
+        print(f"Database not found: {db_path}")
+        sys.exit(1)
+
     conn = sqlite3.connect(str(db_path))
     cursor = conn.cursor()
 
     cursor.execute("PRAGMA table_info(import)")
     cols = {row[1] for row in cursor.fetchall()}
 
-    if 'series' in cols:
-        # Include episode title for bulletproof matching
-        title_col = 'title' if 'title' in cols else 'episode_title' if 'episode_title' in cols else 'name' if 'name' in cols else None
-        if title_col:
-            cursor.execute(f"SELECT checksum, series, season, episode, {title_col} FROM import WHERE dlsource = 'Amazon' ORDER BY series, season, CAST(episode as INTEGER)")
-        else:
-            cursor.execute("SELECT checksum, series, season, episode, '' as title FROM import WHERE dlsource = 'Amazon' ORDER BY series, season, CAST(episode as INTEGER)")
-        data = cursor.fetchall()
+    if 'checksum' not in cols:
         conn.close()
-        return data, True
-    elif 'movie' in cols:
-        cursor.execute("SELECT checksum, movie FROM import WHERE dlsource = 'Amazon'")
-        data = cursor.fetchall()
-        conn.close()
-        return data, False
-    else:
-        cursor.execute("SELECT checksum FROM import LIMIT 0")
-        data = cursor.fetchall()
-        conn.close()
-        return data, False
+        print("Import table missing required checksum column")
+        sys.exit(1)
+
+    title_column = 'title' if 'title' in cols else None
+
+    tv_items = defaultdict(list)
+    if {'series', 'season', 'episode'}.issubset(cols):
+        select_title = f", {title_column}" if title_column else ", ''"
+        cursor.execute(
+            "SELECT checksum, series, season, episode" + select_title +
+            " FROM import WHERE dlsource = 'Amazon' AND series IS NOT NULL AND TRIM(series) != ''"
+            " AND season IS NOT NULL ORDER BY series, CAST(season AS INTEGER), CAST(episode AS INTEGER)"
+        )
+        for checksum, series, season, episode, title in cursor.fetchall():
+            try:
+                season_num = int(season)
+            except (TypeError, ValueError):
+                continue
+            tv_items[(series, season_num)].append(
+                (checksum, series, season_num, episode, title or '')
+            )
+
+    movie_items = defaultdict(list)
+    if 'movie' in cols:
+        cursor.execute(
+            "SELECT checksum, movie FROM import WHERE dlsource = 'Amazon' AND movie IS NOT NULL AND TRIM(movie) != ''"
+        )
+        for checksum, movie in cursor.fetchall():
+            movie_items[movie].append((checksum, movie))
+
+    conn.close()
+    return dict(tv_items), dict(movie_items)
 
 def similarity_score(a, b):
     if not a or not b:
@@ -148,7 +193,7 @@ def clean_episode_title(title):
 
     return cleaned
 
-async def scrape_page(url, database_items=None, verbose=False):
+async def fetch_html(url, verbose=False):
     async_playwright = check_playwright()
     browsers = ['chromium', 'firefox', 'webkit']
     user_agents = [
@@ -165,48 +210,54 @@ async def scrape_page(url, database_items=None, verbose=False):
                 async with async_playwright() as p:
                     browser = getattr(p, browser_name)
                     browser_instance = await browser.launch()
-                    context = await browser_instance.new_context(user_agent=user_agent)
-                    page = await context.new_page()
-
-                    await page.goto(url, timeout=60000)
-
-                    prev_height = 0
-                    while True:
-                        await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                        await asyncio.sleep(2)
-                        curr_height = await page.evaluate("document.body.scrollHeight")
-                        if curr_height == prev_height:
-                            break
-                        prev_height = curr_height
-
-                    await asyncio.sleep(2)
-
+                    context = None
                     try:
-                        more_buttons = await page.query_selector_all('button:has-text("more"), button:has-text("More"), [data-testid*="more"]')
-                        for btn in more_buttons:
-                            await btn.click()
-                            await asyncio.sleep(1)
-                    except:
-                        pass
+                        context = await browser_instance.new_context(user_agent=user_agent)
+                        page = await context.new_page()
 
-                    html = await page.content()
-                    await browser_instance.close()
+                        await page.goto(url, timeout=60000)
 
+                        prev_height = 0
+                        while True:
+                            await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                            await asyncio.sleep(2)
+                            curr_height = await page.evaluate("document.body.scrollHeight")
+                            if curr_height == prev_height:
+                                break
+                            prev_height = curr_height
+
+                        await asyncio.sleep(2)
+
+                        try:
+                            more_buttons = await page.query_selector_all(
+                                'button:has-text("more"), button:has-text("More"), [data-testid*="more"]'
+                            )
+                            for btn in more_buttons:
+                                await btn.click()
+                                await asyncio.sleep(1)
+                        except Exception:
+                            pass
+
+                        html = await page.content()
+                    finally:
+                        if context:
+                            await context.close()
+                        await browser_instance.close()
+
+                if verbose:
+                    print(f"    HTML length: {len(html)}")
+
+                if len(html) < MIN_HTML_LENGTH:
                     if verbose:
-                        print(f"    HTML length: {len(html)}")
+                        print("    HTML too short, trying next browser/agent")
+                    continue
 
-                    if len(html) < 100000:
-                        if verbose:
-                            print(f"    HTML too short, trying next browser/agent")
-                        continue
-
-                    result = parse_html(html, database_items, verbose)
+                if 'data-automation-id="title"' not in html:
                     if verbose:
-                        print(f"    Parse result: {result is not None}")
-                        if result:
-                            print(f"    Title: {result.get('title')}")
-                            print(f"    Season: {result.get('season')}")
-                    return result
+                        print("    Missing title marker, trying next browser/agent")
+                    continue
+
+                return html
 
             except Exception as e:
                 if verbose:
@@ -220,6 +271,43 @@ def extract_pattern(html, patterns):
         if m := re.search(pattern, html, re.IGNORECASE | re.DOTALL):
             return m.group(1).strip()
     return None
+
+def format_episode_list(season, numbers):
+    numbers = sorted({n for n in numbers if n is not None})
+    if not numbers:
+        return "None"
+
+    try:
+        season_num = int(season)
+    except (TypeError, ValueError):
+        season_num = None
+
+    formatted = []
+    for number in numbers:
+        try:
+            ep_num = int(number)
+        except (TypeError, ValueError):
+            formatted.append(str(number))
+            continue
+
+        if season_num is not None:
+            formatted.append(f"S{season_num:02d}E{ep_num:02d}")
+        else:
+            formatted.append(f"E{ep_num:02d}")
+
+    return ', '.join(formatted)
+
+
+def write_missing_episode_report(series, season, local_eps, scraped_eps, missing, extra, url):
+    report_path = Path(__file__).parent / "missingepisodes.txt"
+    with report_path.open('w', encoding='utf-8') as handle:
+        handle.write(f"Series: {series}\n")
+        handle.write(f"Season: {season}\n")
+        handle.write(f"Local episodes: {format_episode_list(season, local_eps)}\n")
+        handle.write(f"Scraped episodes: {format_episode_list(season, scraped_eps)}\n")
+        handle.write(f"Missing episodes: {format_episode_list(season, missing)}\n")
+        handle.write(f"Extra episodes: {format_episode_list(season, extra)}\n")
+        handle.write(f"URL: {url}\n")
 
 class BulletproofEpisodeParser:
     def __init__(self, html_content, database_items, verbose=False):
@@ -446,7 +534,7 @@ def extract_episodes(html, database_items, verbose=False):
     parser = BulletproofEpisodeParser(html, database_items, verbose)
     return parser.parse_episodes()
 
-def parse_html(html, database_items=None, verbose=False):
+def parse_html(html, verbose=False):
     data = {}
 
     data['title'] = extract_pattern(html, [
@@ -578,11 +666,6 @@ def parse_html(html, database_items=None, verbose=False):
         else:
             data['imovie'] = image_url
 
-    if database_items:
-        data['episodes'] = extract_episodes(html, database_items, verbose)
-    else:
-        data['episodes'] = []
-
     # Debug output for description validation
     if verbose and data.get('season'):
         print(f"    Series description: {data.get('dseries', 'None')[:100]}...")
@@ -592,44 +675,69 @@ def parse_html(html, database_items=None, verbose=False):
             # Clear dseries to avoid duplicate data
             data['dseries'] = None
 
+    data['episodes'] = []
     return data
 
-def validate_episodes(content_data, scraped_data, is_tv):
-    if not is_tv or not scraped_data.get('episodes'):
+def validate_episodes(matches, scraped_data):
+    if not matches or 'series' not in matches[0]:
         return True
 
-    db_episodes = {}
-    for row in content_data:
-        if len(row) >= 4:
-            checksum, series, season, episode = row[:4]
-            key = (series, season)
-            if key not in db_episodes:
-                db_episodes[key] = set()
-            # Extract episode number for comparison
-            ep_num = extract_episode_number(episode)
-            if ep_num:
-                db_episodes[key].add(ep_num)
+    expected = set()
+    for match in matches:
+        ep_num = extract_episode_number(match.get('episode'))
+        if ep_num is not None:
+            expected.add(ep_num)
 
-    scraped_episodes = {ep['episode_number'] for ep in scraped_data['episodes'] if ep.get('episode_number')}
+    if not expected:
+        return True
 
-    for (series, season), db_eps in db_episodes.items():
-        if db_eps != scraped_episodes:
-            missing = db_eps - scraped_episodes
-            extra = scraped_episodes - db_eps
+    scraped_numbers = {
+        ep.get('episode_number')
+        for ep in scraped_data.get('episodes', [])
+        if ep.get('episode_number') is not None
+    }
 
-            with open('missingepisodes.txt', 'w') as f:
-                f.write(f"Series: {series}\n")
-                f.write(f"Season: {season}\n")
-                f.write(f"Local episodes: {sorted(db_eps)}\n")
-                f.write(f"Missing episodes: {sorted(missing) if missing else 'None'}\n")
-                f.write(f"Extra episodes: {sorted(extra) if extra else 'None'}\n")
-                f.write(f"URL: {scraped_data.get('url', 'Unknown')}\n")
-
-            print(f"Episode mismatch for {series} Season {season}")
-            print(f"Missing episodes: {sorted(missing) if missing else 'None'}")
-            return False
+    if expected != scraped_numbers:
+        series = matches[0].get('series', 'Unknown')
+        season = matches[0].get('season')
+        missing = expected - scraped_numbers
+        extra = scraped_numbers - expected
+        write_missing_episode_report(
+            series,
+            season,
+            expected,
+            scraped_numbers,
+            missing,
+            extra,
+            scraped_data.get('url', 'Unknown'),
+        )
+        print(f"Episode mismatch for {series} Season {season}")
+        print(f"Missing episodes: {format_episode_list(season, missing)}")
+        return False
 
     return True
+
+
+def prepare_tv_matches(rows):
+    sorted_rows = sorted(
+        rows,
+        key=lambda row: extract_episode_number(row[3]) or 0
+    )
+    matches = []
+    for checksum, series, season, episode, title in sorted_rows:
+        matches.append({
+            'checksum': checksum,
+            'series': series,
+            'season': season,
+            'episode': episode,
+            'episode_title': title,
+        })
+    return matches
+
+
+def prepare_movie_matches(rows):
+    return [{'checksum': checksum, 'movie': movie} for checksum, movie in rows]
+
 
 def update_tv_data(cursor, match, scraped_data, ep_data, cols):
     updates, values = [], []
@@ -709,91 +817,64 @@ def update_database(matches, scraped_data):
     conn.commit()
     conn.close()
 
-def find_tv_matches(content_data, scraped_title, scraped_season):
-    matches = []
-    for row in content_data:
-        if len(row) >= 4:
-            checksum, series, season, episode = row[:4]
-            episode_title = row[4] if len(row) >= 5 else ''
-            if scraped_season == season and titles_match(scraped_title, series):
-                matches.append({
-                    'checksum': checksum,
-                    'series': series,
-                    'season': season,
-                    'episode': episode,
-                    'episode_title': episode_title
-                })
-    return matches
-
-def find_movie_matches(content_data, scraped_title):
-    matches = []
-    for row in content_data:
-        if len(row) >= 2:
-            checksum, movie = row[:2]
-            if titles_match(scraped_title, movie):
-                matches.append({'checksum': checksum, 'movie': movie})
-    return matches
-
-async def process_url(url, content_data, is_tv, verbose):
+async def process_url(url, tv_map, movie_map, tv_needed, movie_needed, verbose):
     if verbose:
         print(f"Trying: {url}")
 
-    # Get the relevant database items for this season/series
-    if is_tv and content_data:
-        # Get unique series/season combinations
-        season_items = {}
-        for row in content_data:
-            if len(row) >= 3:
-                series, season = row[1], row[2]
-                key = (series, season)
-                if key not in season_items:
-                    season_items[key] = []
-                season_items[key].append(row)
-
-        # Try each series/season combination
-        for (series, season), items in season_items.items():
-            scraped = await scrape_page(url, items, verbose)
-            if not scraped:
-                continue
-
-            scraped['url'] = url
-            scraped_title = scraped.get('title', '')
-            scraped_season = scraped.get('season')
-
-            if verbose:
-                print(f"  Scraped title: '{scraped_title}', season: {scraped_season}")
-
-            if scraped_title and scraped_season:
-                if scraped_season == season and titles_match(scraped_title, series):
-                    matches = find_tv_matches(content_data, scraped_title, scraped_season)
-                    if matches:
-                        if verbose:
-                            print(f"  Found {len(matches)} matches for {series} Season {season}")
-                        return matches, scraped
-    else:
-        # Movie handling
-        scraped = await scrape_page(url, content_data, verbose)
-        if not scraped:
-            if verbose:
-                print(f"  Failed to scrape {url}")
-            return None
-
-        scraped['url'] = url
-        scraped_title = scraped.get('title', '')
-
+    html = await fetch_html(url, verbose)
+    if not html:
         if verbose:
-            print(f"  Scraped title: '{scraped_title}'")
+            print(f"  Failed to fetch {url}")
+        return None
 
-        if scraped_title:
-            matches = find_movie_matches(content_data, scraped_title)
-            if matches:
-                if verbose:
-                    print(f"  Found {len(matches)} matches")
-                return matches, scraped
+    scraped = parse_html(html, verbose)
+    scraped['url'] = url
+    scraped_title = (scraped.get('title') or '').strip()
+    scraped_season = scraped.get('season')
+
+    if scraped_title and scraped_season is not None and tv_needed:
+        best_candidate = None
+        best_score = 0.0
+        for series, season in tv_needed:
+            if season != scraped_season:
+                continue
+            if titles_match(scraped_title, series):
+                score = similarity_score(scraped_title, series)
+                if score > best_score:
+                    best_candidate = (series, season)
+                    best_score = score
+
+        if best_candidate:
+            items = tv_map[best_candidate]
+            scraped['episodes'] = extract_episodes(html, items, verbose)
+            matches = prepare_tv_matches(items)
+            if verbose:
+                print(
+                    f"  Matched series '{best_candidate[0]}' season {best_candidate[1]} with {len(matches)} items"
+                )
+            return 'tv', best_candidate, matches, scraped
+
+    if scraped_title and movie_needed:
+        best_movie = None
+        best_score = 0.0
+        for movie in movie_needed:
+            if titles_match(scraped_title, movie):
+                score = similarity_score(scraped_title, movie)
+                if score > best_score:
+                    best_movie = movie
+                    best_score = score
+
+        if best_movie:
+            matches = prepare_movie_matches(movie_map[best_movie])
+            scraped['episodes'] = []
+            if verbose:
+                print(f"  Matched movie '{best_movie}' with {len(matches)} items")
+            return 'movie', best_movie, matches, scraped
 
     if verbose:
         print(f"  No matches found for {url}")
     return None
+
 
 async def main():
     parser = argparse.ArgumentParser(description="Online metadata import")
@@ -802,59 +883,75 @@ async def main():
 
     log_location = get_config()
     urls = get_urls(log_location)
-    content_data, is_tv = get_content()
+    tv_map, movie_map = get_content()
 
     if not urls:
         print("No URLs found in log")
         return
-    if not content_data:
+
+    tv_needed = set(tv_map.keys())
+    movie_needed = set(movie_map.keys())
+
+    if not tv_needed and not movie_needed:
         print("No Amazon content in database")
         return
 
+    total_targets = len(tv_needed) + len(movie_needed)
+    limit = max(total_targets * 2, 1)
+
+    batches = [urls[:limit]]
+    if len(urls) > limit:
+        batches.append(urls[limit:limit * 2])
+
     if args.verbose:
-        print(f"Found {len(urls)} URLs, {len(content_data)} content items")
+        print(
+            f"Found {len(urls)} URLs, {len(tv_needed)} seasons and {len(movie_needed)} movies to match"
+        )
 
-    if is_tv:
-        needed = set((row[1], row[2]) for row in content_data if len(row) >= 3)
-        limit = len(needed) * 2
-    else:
-        needed = set(row[1] for row in content_data if len(row) >= 2)
-        limit = len(needed) * 2
+    any_updates = False
 
-    found_matches = False
-
-    for url_batch in [urls[:limit], urls[limit:limit*2] if len(urls) > limit else []]:
-        if not url_batch or (found_matches and url_batch == urls[limit:limit*2]):
+    for attempt, url_batch in enumerate(batches, start=1):
+        if not url_batch:
             continue
 
-        if url_batch == urls[limit:limit*2] and args.verbose:
+        if attempt == 2 and args.verbose:
             print("Doubling URL limit for final attempt")
 
         for url in url_batch:
-            result = await process_url(url, content_data, is_tv, args.verbose)
+            result = await process_url(url, tv_map, movie_map, tv_needed, movie_needed, args.verbose)
             if not result:
                 continue
 
-            matches, scraped = result
+            kind, key, matches, scraped = result
 
-            if not validate_episodes(content_data, scraped, is_tv):
-                print("Process stopped due to missing episodes")
-                return
-
-            update_database(matches, scraped)
-            print(f"Updated {len(matches)} items from {url}")
-            found_matches = True
-
-            if is_tv:
-                season_key = (matches[0]['series'], matches[0]['season'])
-                needed.discard(season_key)
+            if kind == 'tv':
+                if not validate_episodes(matches, scraped):
+                    print("Process stopped due to missing episodes")
+                    return
+                update_database(matches, scraped)
+                tv_needed.discard(key)
             else:
-                needed.discard(matches[0]['movie'])
+                update_database(matches, scraped)
+                movie_needed.discard(key)
 
-            if not needed:
+            any_updates = True
+            print(f"Updated {len(matches)} items from {url}")
+
+            if not tv_needed and not movie_needed:
                 return
 
-    if not found_matches:
+        if not tv_needed and not movie_needed:
+            return
+
+    if any_updates:
+        remaining = []
+        if tv_needed:
+            remaining.extend([f"{series} S{season}" for series, season in sorted(tv_needed)])
+        if movie_needed:
+            remaining.extend(sorted(movie_needed))
+        if remaining:
+            print("No matches found for: " + ", ".join(remaining))
+    else:
         print("No matches found")
 
 if __name__ == "__main__":

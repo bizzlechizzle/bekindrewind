@@ -16,7 +16,11 @@ Arguments:
 -v : runs terminal in verbose mode
 -t : runs test mode, does not upload torrent
 
-Test mode creates the torrent but does not upload it to the site. 
+Test mode creates the torrent but does not upload it to the site.
+
+The uploader skips any release that still contains macOS `.DS_Store` files or
+folders named `tests`. Remove those extras before trying again so the torrent
+only includes the intended media files.
 
 Folder Layout 
 autorewind.py 
