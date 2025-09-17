@@ -27,7 +27,7 @@ DEFAULT_CATEGORY_FALLBACKS = {
     "season": "tv_boxsets",
     "episode": "tv_episodes_hd",
 }
-DISALLOWED_UPLOAD_NAMES = (".DS_Store", "tests")
+DISALLOWED_UPLOAD_NAMES = (".ds_store", "tests")
 
 
 class UploadError(Exception):
@@ -193,18 +193,29 @@ def collect_releases(
             }
         )
 
-    return sorted(releases, key=lambda item: str(item["directory"]))
+    return sorted(releases, key=release_sort_key)
+
+
+def release_sort_key(release: Dict) -> Tuple[float, str]:
+    directory: Path = release["directory"]
+    try:
+        mtime = directory.stat().st_mtime
+    except OSError:
+        mtime = 0.0
+    return (mtime, str(directory))
 
 
 def find_disallowed_entries(directory: Path) -> List[Path]:
     matches: List[Path] = []
-    for name in DISALLOWED_UPLOAD_NAMES:
-        for candidate in directory.rglob(name):
-            try:
-                candidate.relative_to(directory)
-            except ValueError:
-                continue
-            matches.append(candidate)
+    for candidate in directory.rglob("*"):
+        name = candidate.name.lower()
+        if name not in DISALLOWED_UPLOAD_NAMES:
+            continue
+        try:
+            candidate.relative_to(directory)
+        except ValueError:
+            continue
+        matches.append(candidate)
     return sorted(matches, key=lambda path: str(path))
 
 
